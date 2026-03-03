@@ -1,0 +1,334 @@
+:root {
+  --bg-primary: #1a1a2e;
+  --bg-secondary: #16213e;
+  --bg-card: #0f3460;
+  --bg-card-hover: #1a4a7a;
+  --text-primary: #e8d5b7;
+  --text-secondary: #a89272;
+  --text-muted: #6b5c4a;
+  --accent-gold: #d4a843;
+  --accent-red: #c0392b;
+  --accent-green: #27ae60;
+  --accent-blue: #2980b9;
+  --border-color: #2c3e50;
+  --shadow: rgba(0, 0, 0, 0.4);
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  min-height: 100vh;
+}
+
+#root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.app {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  grid-template-rows: auto 1fr auto;
+  min-height: 100vh;
+  gap: 1px;
+  background: var(--border-color);
+}
+
+.app-header {
+  grid-column: 1 / -1;
+  background: var(--bg-secondary);
+  padding: 12px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 2px solid var(--accent-gold);
+}
+
+.app-header h1 {
+  font-size: 1.4rem;
+  color: var(--accent-gold);
+  font-weight: 600;
+  letter-spacing: 1px;
+}
+
+.app-header .turn-info {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.main-area {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-primary);
+  overflow: hidden;
+}
+
+.sidebar {
+  background: var(--bg-secondary);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.controls-bar {
+  grid-column: 1 / -1;
+  background: var(--bg-secondary);
+  padding: 10px 24px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-top: 1px solid var(--border-color);
+}
+
+/* Tabs */
+.tab-bar {
+  display: flex;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.tab-bar button {
+  flex: 1;
+  padding: 10px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.85rem;
+  border-bottom: 2px solid transparent;
+  transition: all 0.2s;
+}
+
+.tab-bar button:hover {
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.tab-bar button.active {
+  color: var(--accent-gold);
+  border-bottom-color: var(--accent-gold);
+}
+
+/* Cards */
+.card {
+  background: var(--bg-card);
+  border-radius: 6px;
+  padding: 12px;
+  margin: 8px;
+  border: 1px solid var(--border-color);
+}
+
+.card:hover {
+  background: var(--bg-card-hover);
+}
+
+.card h3 {
+  font-size: 0.95rem;
+  color: var(--accent-gold);
+  margin-bottom: 6px;
+}
+
+.card p {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+/* Stats */
+.stat-row {
+  display: flex;
+  gap: 12px;
+  margin: 6px 0;
+  flex-wrap: wrap;
+}
+
+.stat {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.stat strong {
+  color: var(--text-primary);
+}
+
+.stat-bar {
+  width: 60px;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  overflow: hidden;
+  display: inline-block;
+  vertical-align: middle;
+  margin-left: 4px;
+}
+
+.stat-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s;
+}
+
+.stat-bar-fill.power { background: var(--accent-red); }
+.stat-bar-fill.morale { background: var(--accent-blue); }
+.stat-bar-fill.gold { background: var(--accent-gold); }
+.stat-bar-fill.corruption { background: #8e44ad; }
+.stat-bar-fill.prosperity { background: var(--accent-green); }
+.stat-bar-fill.defense { background: var(--accent-blue); }
+
+/* Buttons */
+button.primary {
+  background: var(--accent-gold);
+  color: var(--bg-primary);
+  border: none;
+  padding: 8px 20px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.85rem;
+  transition: all 0.2s;
+}
+
+button.primary:hover {
+  filter: brightness(1.1);
+  transform: translateY(-1px);
+}
+
+button.primary:active {
+  transform: translateY(0);
+}
+
+button.secondary {
+  background: var(--bg-card);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: all 0.2s;
+}
+
+button.secondary:hover {
+  background: var(--bg-card-hover);
+}
+
+/* Event list */
+.event-item {
+  display: flex;
+  gap: 8px;
+  padding: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  font-size: 0.8rem;
+}
+
+.event-item:last-child {
+  border-bottom: none;
+}
+
+.event-icon {
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.event-text {
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.event-text .event-turn {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+}
+
+.hook-badge {
+  display: inline-block;
+  background: var(--accent-gold);
+  color: var(--bg-primary);
+  font-size: 0.65rem;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-weight: 600;
+  margin-left: 4px;
+}
+
+/* Map */
+.world-map {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+}
+
+.world-map svg {
+  width: 100%;
+  height: 100%;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-primary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* Dashboard */
+.dashboard {
+  padding: 16px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+/* Faction selected highlight */
+.faction-card.selected {
+  border-color: var(--accent-gold);
+  box-shadow: 0 0 8px rgba(212, 168, 67, 0.3);
+}
+
+/* Location tooltip */
+.location-tooltip {
+  position: absolute;
+  background: var(--bg-card);
+  border: 1px solid var(--accent-gold);
+  border-radius: 6px;
+  padding: 10px 14px;
+  pointer-events: none;
+  z-index: 100;
+  max-width: 220px;
+  box-shadow: 0 4px 12px var(--shadow);
+}
+
+.location-tooltip h4 {
+  color: var(--accent-gold);
+  font-size: 0.85rem;
+  margin-bottom: 4px;
+}
+
+.location-tooltip p {
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  line-height: 1.3;
+}
