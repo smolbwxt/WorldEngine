@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import type { Location, WorldState } from '../../engine/types.js';
+import TownMapView from './TownMapView.js';
 
 interface Props {
   location: Location | null;
@@ -15,6 +17,8 @@ function StatBar({ value, max, className }: { value: number; max: number; classN
 }
 
 export default function LocationDetail({ location, worldState }: Props) {
+  const [showTownMap, setShowTownMap] = useState(false);
+
   if (!location) {
     return (
       <div style={{ padding: 16, color: 'var(--text-muted)', textAlign: 'center', fontSize: '0.85rem' }}>
@@ -43,7 +47,21 @@ export default function LocationDetail({ location, worldState }: Props) {
           {controller && ` — controlled by ${controller.name}`}
         </p>
         <p>{location.description}</p>
+        <button
+          className={showTownMap ? 'primary' : 'secondary'}
+          style={{ marginTop: 8, fontSize: '0.75rem' }}
+          onClick={() => setShowTownMap(!showTownMap)}
+        >
+          {showTownMap ? 'Hide Local Map' : 'View Local Map'}
+        </button>
       </div>
+
+      {showTownMap && (
+        <div className="card">
+          <h3>Local Map — {location.name}</h3>
+          <TownMapView location={location} />
+        </div>
+      )}
 
       <div className="card">
         <h3>Statistics</h3>
