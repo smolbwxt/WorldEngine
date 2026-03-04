@@ -1,0 +1,44 @@
+[
+  {
+    "id": "the_maw_stirs",
+    "triggerTurn": 6,
+    "title": "Something Stirs in The Maw",
+    "text": "Tremors have been felt near The Maw. Animals flee the area. A scholar's journal, found near the entrance, speaks of 'the Sleeper' awakening.",
+    "hookPotential": 5
+  },
+  {
+    "id": "valdris_gambit",
+    "triggerTurn": 12,
+    "title": "The Valdris Gambit",
+    "text": "Lord Valdris makes a bold move — openly challenging the Emperor's authority by refusing to pay tribute. The other houses must choose sides.",
+    "hookPotential": 5
+  },
+  {
+    "id": "goblin_alliance",
+    "triggerTurn": 8,
+    "title": "The Green Tide",
+    "text": "Warchief Grak sends emissaries to goblin tribes beyond the hills. If they answer, the Greentusk Horde could triple in size.",
+    "hookPotential": 5
+  },
+  {
+    "id": "scars_choice",
+    "triggerTurn": 10,
+    "title": "Scar's Choice",
+    "text": "Scar of the Iron Fang faces a crossroads: continue raiding, or offer his sword to a noble house in exchange for legitimacy.",
+    "hookPotential": 5
+  },
+  {
+    "id": "the_old_order",
+    "triggerTurn": 16,
+    "title": "The Old Order",
+    "text": "An ancient knightly order — thought dissolved — sends word that they are reforming. They seek worthy champions.",
+    "hookPotential": 5
+  },
+  {
+    "id": "plague_of_shadows",
+    "triggerTurn": 20,
+    "title": "The Plague of Shadows",
+    "text": "A strange malady spreads — not of the body, but of the spirit. People lose hope, give up, wander into the wilds. Something is feeding on despair.",
+    "hookPotential": 5
+  }
+]

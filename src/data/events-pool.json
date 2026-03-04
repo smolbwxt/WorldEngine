@@ -1,0 +1,182 @@
+[
+  {
+    "id": "harsh_winter",
+    "type": "weather",
+    "text": "A bitter cold grips the land. Crops wither and travel becomes treacherous.",
+    "icon": "❄️",
+    "conditions": { "season": "Winter" },
+    "effects": { "targetType": "global", "changes": { "prosperity": -5 } },
+    "hookPotential": 2,
+    "weight": 3
+  },
+  {
+    "id": "bountiful_harvest",
+    "type": "festival",
+    "text": "The harvest is plentiful this year. Spirits are high across the land.",
+    "icon": "🌾",
+    "conditions": { "season": "Autumn" },
+    "effects": { "targetType": "global", "changes": { "prosperity": 5, "morale": 3 } },
+    "hookPotential": 1,
+    "weight": 2
+  },
+  {
+    "id": "plague_outbreak",
+    "type": "plague",
+    "text": "A sickness spreads through the region. The weakest settlements suffer most.",
+    "icon": "☠️",
+    "conditions": {},
+    "effects": { "targetType": "location", "changes": { "population": -100, "prosperity": -10 } },
+    "hookPotential": 4,
+    "weight": 1
+  },
+  {
+    "id": "wandering_knight",
+    "type": "discovery",
+    "text": "A wandering knight arrives, offering their sword to whoever can prove their cause is just.",
+    "icon": "⚔️",
+    "conditions": {},
+    "effects": { "targetType": "faction", "changes": { "power": 3, "morale": 5 } },
+    "hookPotential": 3,
+    "weight": 2
+  },
+  {
+    "id": "merchant_caravan",
+    "type": "trade",
+    "text": "A wealthy merchant caravan passes through, bringing rare goods and news from distant lands.",
+    "icon": "🐪",
+    "conditions": {},
+    "effects": { "targetType": "location", "changes": { "prosperity": 5, "gold": 15 } },
+    "hookPotential": 2,
+    "weight": 3
+  },
+  {
+    "id": "bandit_refugees",
+    "type": "migration",
+    "text": "Desperate refugees arrive, some carrying nothing but the clothes on their backs.",
+    "icon": "🚶",
+    "conditions": {},
+    "effects": { "targetType": "location", "changes": { "population": 50, "prosperity": -3 } },
+    "hookPotential": 3,
+    "weight": 2
+  },
+  {
+    "id": "dark_omen",
+    "type": "omen",
+    "text": "Strange signs appear: a blood-red moon, crows flying in circles, wells going bitter. The superstitious whisper of doom.",
+    "icon": "🌑",
+    "conditions": {},
+    "effects": { "targetType": "global", "changes": { "morale": -5 } },
+    "hookPotential": 4,
+    "weight": 1
+  },
+  {
+    "id": "imperial_scandal",
+    "type": "scandal",
+    "text": "A corruption scandal rocks the imperial court. Officials point fingers while the treasury bleeds.",
+    "icon": "👑",
+    "conditions": { "requiresFaction": "empire" },
+    "effects": { "targetType": "faction", "changes": { "corruption": 5, "gold": -20, "morale": -5 } },
+    "hookPotential": 3,
+    "weight": 2
+  },
+  {
+    "id": "mine_discovery",
+    "type": "discovery",
+    "text": "Miners uncover a rich new vein of ore. The discovery could change fortunes — or attract unwanted attention.",
+    "icon": "⛏️",
+    "conditions": {},
+    "effects": { "targetType": "location", "changes": { "prosperity": 10 } },
+    "hookPotential": 3,
+    "weight": 1
+  },
+  {
+    "id": "holy_pilgrimage",
+    "type": "festival",
+    "text": "Pilgrims travel to Haven Chapel, bringing offerings and hope. Their faith strengthens the community.",
+    "icon": "✝️",
+    "conditions": {},
+    "effects": { "targetType": "location", "changes": { "morale": 10, "prosperity": 3 } },
+    "hookPotential": 2,
+    "weight": 2
+  },
+  {
+    "id": "goblin_infighting",
+    "type": "battle",
+    "text": "Goblin tribes bicker and fight among themselves. Their unity falters — for now.",
+    "icon": "👺",
+    "conditions": { "requiresFaction": "goblin" },
+    "effects": { "targetType": "faction", "changes": { "power": -5, "morale": -8 } },
+    "hookPotential": 2,
+    "weight": 2
+  },
+  {
+    "id": "spring_floods",
+    "type": "disaster",
+    "text": "Spring meltwater causes flooding along the rivers. Roads are washed out and bridges weakened.",
+    "icon": "🌊",
+    "conditions": { "season": "Spring" },
+    "effects": { "targetType": "location", "changes": { "defense": -5, "prosperity": -3 } },
+    "hookPotential": 2,
+    "weight": 2
+  },
+  {
+    "id": "ancient_ruins_found",
+    "type": "discovery",
+    "text": "An old map surfaces revealing the location of ruins from before the empire. What treasures — or dangers — lie within?",
+    "icon": "🗺️",
+    "conditions": { "minTurn": 4 },
+    "effects": { "targetType": "global", "changes": {} },
+    "hookPotential": 5,
+    "weight": 1
+  },
+  {
+    "id": "summer_drought",
+    "type": "disaster",
+    "text": "A punishing drought dries up wells and withers fields. Water becomes precious.",
+    "icon": "☀️",
+    "conditions": { "season": "Summer" },
+    "effects": { "targetType": "global", "changes": { "prosperity": -8 } },
+    "hookPotential": 3,
+    "weight": 1
+  },
+  {
+    "id": "mysterious_stranger",
+    "type": "story_hook",
+    "text": "A hooded stranger appears at multiple locations, asking questions about The Maw. No one knows their purpose.",
+    "icon": "🧙",
+    "conditions": { "minTurn": 6 },
+    "effects": { "targetType": "global", "changes": {} },
+    "hookPotential": 5,
+    "weight": 1
+  },
+  {
+    "id": "deserters_join_bandits",
+    "type": "migration",
+    "text": "Imperial soldiers desert their posts and join the nearest bandit gang. The empire grows weaker as lawlessness grows.",
+    "icon": "🏃",
+    "conditions": { "requiresFaction": "empire" },
+    "effects": { "targetType": "faction", "changes": { "power": -3 } },
+    "hookPotential": 3,
+    "weight": 2
+  },
+  {
+    "id": "trade_route_disrupted",
+    "type": "trade",
+    "text": "Bandits or beasts disrupt a major trade route. Merchants demand protection or threaten to reroute.",
+    "icon": "🚫",
+    "conditions": {},
+    "effects": { "targetType": "location", "changes": { "prosperity": -8, "gold": -10 } },
+    "hookPotential": 3,
+    "weight": 2
+  },
+  {
+    "id": "earthtremor",
+    "type": "omen",
+    "text": "The ground shakes. Near The Maw, cracks widen. The old-timers say the earth hasn't moved like this in living memory.",
+    "icon": "🌋",
+    "conditions": { "minTurn": 8 },
+    "effects": { "targetType": "global", "changes": { "morale": -3 } },
+    "hookPotential": 5,
+    "weight": 1
+  }
+]
