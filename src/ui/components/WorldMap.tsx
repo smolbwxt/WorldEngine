@@ -1,6 +1,7 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback, useRef } from 'react';
 import type { WorldState, Faction, Location } from '../../engine/types.js';
 import { generateTerrain, TERRAIN_COLORS, type TerrainMap } from '../../engine/terrain.js';
+import { generateArtisticMap, buildMapPrompt, type MapGenResult } from '../../engine/mapImageGen.js';
 
 interface Props {
   worldState: WorldState;
@@ -31,6 +32,8 @@ const LOCATION_ICONS: Record<string, string> = {
   tower: '▲',
   dungeon: '◈',
 };
+
+type MapView = 'procedural' | 'artistic';
 
 function getControllingFaction(locId: string, state: WorldState): string | null {
   for (const f of Object.values(state.factions)) {
@@ -183,9 +186,110 @@ function RiverPaths({ terrain }: { terrain: TerrainMap }) {
   );
 }
 
+// Artistic map image overlay
+function ArtisticMapLayer({ imageData }: { imageData: MapGenResult }) {
+  const src = `data:${imageData.mimeType};base64,${imageData.imageBase64}`;
+  return (
+    <image
+      href={src}
+      x="0" y="0"
+      width="100" height="100"
+      preserveAspectRatio="xMidYMid slice"
+    />
+  );
+}
+
+// Map controls bar
+function MapControls({
+  view,
+  onToggleView,
+  onGenerate,
+  generating,
+  hasArtistic,
+  error,
+}: {
+  view: MapView;
+  onToggleView: () => void;
+  onGenerate: () => void;
+  generating: boolean;
+  hasArtistic: boolean;
+  error: string | null;
+}) {
+  return (
+    <div className="map-controls">
+      {hasArtistic && (
+        <button
+          className="map-control-btn"
+          onClick={onToggleView}
+          title={view === 'procedural' ? 'Switch to artistic view' : 'Switch to procedural view'}
+        >
+          {view === 'procedural' ? 'Artistic View' : 'Procedural View'}
+        </button>
+      )}
+      <button
+        className="map-control-btn map-control-btn--generate"
+        onClick={onGenerate}
+        disabled={generating}
+        title="Generate an artistic map using Nano Banana 2"
+      >
+        {generating ? 'Generating...' : 'Generate Artistic Map'}
+      </button>
+      {error && <span className="map-control-error" title={error}>API Error</span>}
+    </div>
+  );
+}
+
+// API key input modal
+function ApiKeyModal({
+  onSubmit,
+  onCancel,
+}: {
+  onSubmit: (key: string) => void;
+  onCancel: () => void;
+}) {
+  const [key, setKey] = useState('');
+  return (
+    <div className="api-key-modal-overlay" onClick={onCancel}>
+      <div className="api-key-modal" onClick={e => e.stopPropagation()}>
+        <h3>Gemini API Key Required</h3>
+        <p>
+          Nano Banana 2 runs via the Gemini API. Enter your API key below, or set{' '}
+          <code>VITE_GEMINI_API_KEY</code> in your <code>.env</code> file.
+        </p>
+        <p style={{ fontSize: '0.8em', opacity: 0.7 }}>
+          Get a free key at{' '}
+          <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">
+            aistudio.google.com/apikey
+          </a>
+        </p>
+        <input
+          type="password"
+          placeholder="AIza..."
+          value={key}
+          onChange={e => setKey(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && key.trim() && onSubmit(key.trim())}
+          autoFocus
+        />
+        <div className="api-key-modal-actions">
+          <button onClick={onCancel}>Cancel</button>
+          <button onClick={() => key.trim() && onSubmit(key.trim())} disabled={!key.trim()}>
+            Generate Map
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function WorldMap({ worldState, selectedFaction, onLocationSelect }: Props) {
   const [hoveredLoc, setHoveredLoc] = useState<Location | null>(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
+  const [mapView, setMapView] = useState<MapView>('procedural');
+  const [artisticMap, setArtisticMap] = useState<MapGenResult | null>(null);
+  const [generating, setGenerating] = useState(false);
+  const [genError, setGenError] = useState<string | null>(null);
+  const [showKeyModal, setShowKeyModal] = useState(false);
+  const apiKeyRef = useRef<string>(import.meta.env.VITE_GEMINI_API_KEY ?? '');
 
   const locations = Object.values(worldState.locations);
 
@@ -217,41 +321,95 @@ export default function WorldMap({ worldState, selectedFaction, onLocationSelect
     return lines;
   }, [locations, worldState.locations]);
 
+  const handleGenerate = useCallback(async (key?: string) => {
+    const apiKey = key || apiKeyRef.current;
+    if (!apiKey) {
+      setShowKeyModal(true);
+      return;
+    }
+    apiKeyRef.current = apiKey;
+    setShowKeyModal(false);
+    setGenerating(true);
+    setGenError(null);
+
+    try {
+      const result = await generateArtisticMap(terrain, worldState, apiKey);
+      setArtisticMap(result);
+      setMapView('artistic');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setGenError(msg);
+      console.error('Map generation failed:', msg);
+    } finally {
+      setGenerating(false);
+    }
+  }, [terrain, worldState]);
+
+  const handleToggleView = useCallback(() => {
+    setMapView(v => v === 'procedural' ? 'artistic' : 'procedural');
+  }, []);
+
+  const showProcedural = mapView === 'procedural' || !artisticMap;
+
   return (
     <div className="world-map">
+      {/* Controls */}
+      <MapControls
+        view={mapView}
+        onToggleView={handleToggleView}
+        onGenerate={() => handleGenerate()}
+        generating={generating}
+        hasArtistic={!!artisticMap}
+        error={genError}
+      />
+
+      {/* Generating overlay */}
+      {generating && (
+        <div className="map-generating-overlay">
+          <div className="map-generating-spinner" />
+          <p>Nano Banana 2 is painting your world...</p>
+          <p style={{ fontSize: '0.75em', opacity: 0.6 }}>
+            {worldState.season} of Year {worldState.year}
+          </p>
+        </div>
+      )}
+
       <svg viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet">
-        {/* Terrain base layer */}
-        {terrain.cells.map((row, gy) =>
-          row.map((cell, gx) => (
-            <rect
-              key={`t${gx}-${gy}`}
-              x={gx * terrain.cellSize}
-              y={gy * terrain.cellSize}
-              width={terrain.cellSize}
-              height={terrain.cellSize}
-              fill={TERRAIN_COLORS[cell.terrain]}
-            />
-          ))
+        {showProcedural ? (
+          <>
+            {/* Terrain base layer */}
+            {terrain.cells.map((row, gy) =>
+              row.map((cell, gx) => (
+                <rect
+                  key={`t${gx}-${gy}`}
+                  x={gx * terrain.cellSize}
+                  y={gy * terrain.cellSize}
+                  width={terrain.cellSize}
+                  height={terrain.cellSize}
+                  fill={TERRAIN_COLORS[cell.terrain]}
+                />
+              ))
+            )}
+            <TerrainDecorations terrain={terrain} />
+            <RiverPaths terrain={terrain} />
+          </>
+        ) : (
+          // Artistic map image from Nano Banana 2
+          artisticMap && <ArtisticMapLayer imageData={artisticMap} />
         )}
-
-        {/* Terrain decorations (trees, mountains, waves) */}
-        <TerrainDecorations terrain={terrain} />
-
-        {/* Rivers */}
-        <RiverPaths terrain={terrain} />
 
         {/* Road connections between locations */}
         {connections.map(({ x1, y1, x2, y2, key }) => (
           <g key={key}>
             <line
               x1={x1} y1={y1} x2={x2} y2={y2}
-              stroke="rgba(120,100,70,0.25)"
+              stroke={showProcedural ? 'rgba(120,100,70,0.25)' : 'rgba(80,60,30,0.4)'}
               strokeWidth="0.5"
               strokeLinecap="round"
             />
             <line
               x1={x1} y1={y1} x2={x2} y2={y2}
-              stroke="rgba(180,160,120,0.15)"
+              stroke={showProcedural ? 'rgba(180,160,120,0.15)' : 'rgba(140,120,80,0.3)'}
               strokeWidth="0.25"
               strokeDasharray="0.8,0.6"
               strokeLinecap="round"
@@ -347,6 +505,14 @@ export default function WorldMap({ worldState, selectedFaction, onLocationSelect
             <span className="stat">Prosp: <strong>{hoveredLoc.prosperity}</strong></span>
           </div>
         </div>
+      )}
+
+      {/* API Key Modal */}
+      {showKeyModal && (
+        <ApiKeyModal
+          onSubmit={(key) => handleGenerate(key)}
+          onCancel={() => setShowKeyModal(false)}
+        />
       )}
     </div>
   );
