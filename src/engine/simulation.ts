@@ -5,12 +5,14 @@ import { processEconomy } from './economy.js';
 import { decideFactionAction, getLocationController } from './factions.js';
 import { resolveRaid, resolveCombat } from './combat.js';
 import { processRandomEvents, processStoryHooks } from './events.js';
+import type { SimulationConfig } from './config.js';
+import { DEFAULT_CONFIG } from './config.js';
 
 /**
  * Main turn resolution loop.
  * Processes one season (turn) and returns the result.
  */
-export function resolveTurn(state: WorldState): TurnResult {
+export function resolveTurn(state: WorldState, config: SimulationConfig = DEFAULT_CONFIG): TurnResult {
   const rng = new SeededRNG(state.rngSeed + state.turn * 7919);
 
   advanceSeason(state);
@@ -20,15 +22,15 @@ export function resolveTurn(state: WorldState): TurnResult {
   const locationChanges: Record<string, Partial<any>> = {};
 
   // 1. Empire Decay Phase
-  events.push(...processEmpireDecay(state, rng));
+  events.push(...processEmpireDecay(state, rng, config));
 
   // 2. Economy Phase
-  events.push(...processEconomy(state, rng));
+  events.push(...processEconomy(state, rng, config));
 
   // 3. Faction Decision Phase + 4. Conflict Resolution Phase
   const factionActions = new Map<string, FactionAction>();
   for (const faction of Object.values(state.factions)) {
-    const action = decideFactionAction(faction, state, rng);
+    const action = decideFactionAction(faction, state, rng, config);
     factionActions.set(faction.id, action);
   }
 
@@ -37,7 +39,7 @@ export function resolveTurn(state: WorldState): TurnResult {
     const faction = state.factions[factionId];
     if (!faction) continue;
 
-    const actionEvents = executeFactionAction(faction, action, state, rng);
+    const actionEvents = executeFactionAction(faction, action, state, rng, config);
     events.push(...actionEvents);
 
     // Record the action
@@ -46,10 +48,10 @@ export function resolveTurn(state: WorldState): TurnResult {
   }
 
   // 5. Consequence Phase — update relationships based on events
-  processConsequences(state, events, rng);
+  processConsequences(state, events, rng, config);
 
   // 6. Random Events Phase
-  events.push(...processRandomEvents(state, rng));
+  events.push(...processRandomEvents(state, rng, config));
 
   // 7. Story Hook Phase
   events.push(...processStoryHooks(state));
@@ -81,28 +83,29 @@ export function resolveTurn(state: WorldState): TurnResult {
 }
 
 /** Process multiple turns at once */
-export function simulateTurns(state: WorldState, count: number): TurnResult[] {
+export function simulateTurns(state: WorldState, count: number, config: SimulationConfig = DEFAULT_CONFIG): TurnResult[] {
   const results: TurnResult[] = [];
   for (let i = 0; i < count; i++) {
-    results.push(resolveTurn(state));
+    results.push(resolveTurn(state, config));
   }
   return results;
 }
 
-function processEmpireDecay(state: WorldState, rng: SeededRNG): WorldEvent[] {
+function processEmpireDecay(state: WorldState, rng: SeededRNG, config: SimulationConfig): WorldEvent[] {
   const events: WorldEvent[] = [];
+  const dc = config.decay;
 
   for (const faction of Object.values(state.factions)) {
     if (faction.type !== 'empire') continue;
 
     // Corruption ticks up slowly
-    if (rng.chance(0.4)) {
-      faction.corruption = clamp(faction.corruption + rng.int(1, 3), 0, 100);
+    if (rng.chance(dc.corruptionTickChance)) {
+      faction.corruption = clamp(faction.corruption + rng.int(dc.corruptionTickRange[0], dc.corruptionTickRange[1]), 0, 100);
     }
 
     // Power erodes based on corruption
-    const corruptionPenalty = Math.floor(faction.corruption / 25);
-    if (corruptionPenalty > 0 && rng.chance(0.5)) {
+    const corruptionPenalty = Math.floor(faction.corruption / dc.corruptionPowerDivisor);
+    if (corruptionPenalty > 0 && rng.chance(dc.powerErosionChance)) {
       faction.power = clamp(faction.power - corruptionPenalty, 0, faction.maxPower);
       events.push({
         id: `decay_${faction.id}_t${state.turn}`,
@@ -119,14 +122,14 @@ function processEmpireDecay(state: WorldState, rng: SeededRNG): WorldEvent[] {
     }
 
     // Treasury drain from corruption
-    const drain = Math.floor(faction.gold * faction.corruption / 500);
+    const drain = Math.floor(faction.gold * faction.corruption / dc.treasuryDrainDivisor);
     if (drain > 0) {
       faction.gold = Math.max(0, faction.gold - drain);
     }
 
     // Morale decay
-    if (faction.corruption > 60 && rng.chance(0.3)) {
-      faction.morale = clamp(faction.morale - 2, 0, 100);
+    if (faction.corruption > dc.moraleDecayCorruptionThreshold && rng.chance(dc.moraleDecayChance)) {
+      faction.morale = clamp(faction.morale - dc.moraleDecayAmount, 0, 100);
     }
   }
 
@@ -137,22 +140,27 @@ function executeFactionAction(
   faction: Faction,
   action: FactionAction,
   state: WorldState,
-  rng: SeededRNG
+  rng: SeededRNG,
+  config: SimulationConfig
 ): WorldEvent[] {
   const events: WorldEvent[] = [];
+  const rc = config.raid;
+  const dc = config.diplomacy;
+  const rec = config.recruitment;
+  const decay = config.decay;
 
   switch (action.type) {
     case 'raid': {
       const target = state.locations[action.targetLocationId];
       if (!target) break;
       const defender = getLocationController(target.id, state);
-      const result = resolveRaid(faction, target, defender, rng);
+      const result = resolveRaid(faction, target, defender, rng, config);
 
       if (result.success) {
         faction.gold += result.lootGold;
         target.prosperity = clamp(target.prosperity - result.prosperityDamage, 0, 100);
         faction.power = clamp(faction.power - result.raiderLosses, 0, faction.maxPower);
-        target.population = Math.max(0, target.population - rng.int(10, 50));
+        target.population = Math.max(0, target.population - rng.int(rc.populationDamageRange[0], rc.populationDamageRange[1]));
 
         events.push({
           id: `raid_${faction.id}_${target.id}_t${state.turn}`,
@@ -174,10 +182,10 @@ function executeFactionAction(
         // Worsen relationship with defender
         if (defender) {
           faction.relationships[defender.id] = clamp(
-            (faction.relationships[defender.id] ?? 0) - 15, -100, 100
+            (faction.relationships[defender.id] ?? 0) + rc.raiderRelationshipDamage, -100, 100
           );
           defender.relationships[faction.id] = clamp(
-            (defender.relationships[faction.id] ?? 0) - 20, -100, 100
+            (defender.relationships[faction.id] ?? 0) + rc.defenderRelationshipDamage, -100, 100
           );
         }
       } else {
@@ -200,9 +208,9 @@ function executeFactionAction(
     }
 
     case 'recruit': {
-      const recruited = rng.int(2, 5);
+      const recruited = rng.int(rec.recruitRange[0], rec.recruitRange[1]);
       faction.power = clamp(faction.power + recruited, 0, faction.maxPower);
-      faction.gold = Math.max(0, faction.gold - recruited * 3);
+      faction.gold = Math.max(0, faction.gold - recruited * rec.recruitCost);
       events.push({
         id: `recruit_${faction.id}_t${state.turn}`,
         turn: state.turn,
@@ -221,9 +229,9 @@ function executeFactionAction(
     case 'fortify': {
       const loc = state.locations[action.locationId];
       if (!loc) break;
-      const amount = rng.int(3, 8);
+      const amount = rng.int(rec.fortifyRange[0], rec.fortifyRange[1]);
       loc.defense = clamp(loc.defense + amount, 0, 100);
-      faction.gold = Math.max(0, faction.gold - 10);
+      faction.gold = Math.max(0, faction.gold - rec.fortifyCost);
       events.push({
         id: `fortify_${faction.id}_${loc.id}_t${state.turn}`,
         turn: state.turn,
@@ -243,8 +251,7 @@ function executeFactionAction(
     case 'patrol': {
       const loc = state.locations[action.locationId];
       if (!loc) break;
-      // Patrols boost defense temporarily and increase morale
-      loc.defense = clamp(loc.defense + 2, 0, 100);
+      loc.defense = clamp(loc.defense + rec.patrolDefenseBoost, 0, 100);
       events.push({
         id: `patrol_${faction.id}_${loc.id}_t${state.turn}`,
         turn: state.turn,
@@ -255,24 +262,25 @@ function executeFactionAction(
         icon: '🛡️',
         factionId: faction.id,
         locationId: loc.id,
-        consequences: [`${loc.name} defense +2`],
+        consequences: [`${loc.name} defense +${rec.patrolDefenseBoost}`],
         hookPotential: 1,
       });
       break;
     }
 
     case 'collect_taxes': {
+      const ec = config.economy;
       let taxes = 0;
       for (const locId of faction.controlledLocations) {
         const loc = state.locations[locId];
         if (!loc) continue;
-        const locTax = Math.floor(loc.prosperity * 0.2);
+        const locTax = Math.floor(loc.prosperity * ec.taxCollectionRate);
         taxes += locTax;
         // Heavy taxation hurts prosperity slightly
-        loc.prosperity = clamp(loc.prosperity - 1, 0, 100);
+        loc.prosperity = clamp(loc.prosperity - ec.taxProsperityDamage, 0, 100);
       }
       // Corruption eats some taxes
-      const effective = Math.floor(taxes * (1 - faction.corruption / 200));
+      const effective = Math.floor(taxes * (1 - faction.corruption / ec.corruptionTaxDivisor));
       faction.gold += effective;
       events.push({
         id: `tax_${faction.id}_t${state.turn}`,
@@ -293,8 +301,8 @@ function executeFactionAction(
       // Noble scheming — weakens the empire or rivals
       const empire = state.factions['aurelian_crown'];
       if (empire) {
-        empire.corruption = clamp(empire.corruption + rng.int(1, 3), 0, 100);
-        faction.gold = Math.max(0, faction.gold - 15);
+        empire.corruption = clamp(empire.corruption + rng.int(dc.schemeCorruptionRange[0], dc.schemeCorruptionRange[1]), 0, 100);
+        faction.gold = Math.max(0, faction.gold - dc.schemeCost);
         events.push({
           id: `scheme_${faction.id}_t${state.turn}`,
           turn: state.turn,
@@ -315,12 +323,12 @@ function executeFactionAction(
       const target = state.factions[action.targetFactionId];
       if (!target) break;
       const currentRelation = faction.relationships[target.id] ?? 0;
-      if (currentRelation > 10 && rng.chance(0.5)) {
+      if (currentRelation > dc.allianceThreshold && rng.chance(dc.allianceSuccessChance)) {
         faction.alliances.push(target.id);
         target.alliances.push(faction.id);
-        faction.relationships[target.id] = clamp(currentRelation + 20, -100, 100);
+        faction.relationships[target.id] = clamp(currentRelation + dc.allianceRelationshipBoost, -100, 100);
         target.relationships[faction.id] = clamp(
-          (target.relationships[faction.id] ?? 0) + 20, -100, 100
+          (target.relationships[faction.id] ?? 0) + dc.allianceRelationshipBoost, -100, 100
         );
         events.push({
           id: `alliance_${faction.id}_${target.id}_t${state.turn}`,
@@ -354,9 +362,9 @@ function executeFactionAction(
     case 'invest': {
       const loc = state.locations[action.locationId];
       if (!loc) break;
-      const investment = Math.min(30, faction.gold);
+      const investment = Math.min(rec.investmentCap, faction.gold);
       faction.gold -= investment;
-      loc.prosperity = clamp(loc.prosperity + Math.floor(investment / 5), 0, 100);
+      loc.prosperity = clamp(loc.prosperity + Math.floor(investment / rec.investmentEfficiency), 0, 100);
       events.push({
         id: `invest_${faction.id}_${loc.id}_t${state.turn}`,
         turn: state.turn,
@@ -367,7 +375,7 @@ function executeFactionAction(
         icon: '📈',
         factionId: faction.id,
         locationId: loc.id,
-        consequences: [`${loc.name} prosperity +${Math.floor(investment / 5)}`],
+        consequences: [`${loc.name} prosperity +${Math.floor(investment / rec.investmentEfficiency)}`],
         hookPotential: 1,
       });
       break;
@@ -376,13 +384,13 @@ function executeFactionAction(
     case 'bribe': {
       const target = state.factions[action.targetFactionId];
       if (!target) break;
-      const bribeAmount = Math.min(20, faction.gold);
+      const bribeAmount = Math.min(dc.bribeCost, faction.gold);
       faction.gold -= bribeAmount;
       faction.relationships[target.id] = clamp(
-        (faction.relationships[target.id] ?? 0) + 10, -100, 100
+        (faction.relationships[target.id] ?? 0) + dc.briberRelationshipGain, -100, 100
       );
       target.relationships[faction.id] = clamp(
-        (target.relationships[faction.id] ?? 0) + 5, -100, 100
+        (target.relationships[faction.id] ?? 0) + dc.bribeTargetRelationshipGain, -100, 100
       );
       events.push({
         id: `bribe_${faction.id}_${target.id}_t${state.turn}`,
@@ -404,7 +412,7 @@ function executeFactionAction(
       if (!target) break;
       const defender = getLocationController(target.id, state);
       if (defender) {
-        const result = resolveCombat(faction, defender, target, rng);
+        const result = resolveCombat(faction, defender, target, rng, config);
         if (result.territoryChanged) {
           defender.controlledLocations = defender.controlledLocations.filter(id => id !== target.id);
           faction.controlledLocations.push(target.id);
@@ -450,10 +458,9 @@ function executeFactionAction(
     }
 
     case 'hire_mercenaries': {
-      const cost = 25;
-      if (faction.gold >= cost) {
-        faction.gold -= cost;
-        faction.power = clamp(faction.power + 5, 0, faction.maxPower);
+      if (faction.gold >= rec.mercenaryCost) {
+        faction.gold -= rec.mercenaryCost;
+        faction.power = clamp(faction.power + rec.mercenaryPower, 0, faction.maxPower);
         events.push({
           id: `mercs_${faction.id}_t${state.turn}`,
           turn: state.turn,
@@ -463,7 +470,7 @@ function executeFactionAction(
           text: `${faction.name} hires mercenaries to protect their interests.`,
           icon: '💂',
           factionId: faction.id,
-          consequences: [`${faction.name} power +5, gold -${cost}`],
+          consequences: [`${faction.name} power +${rec.mercenaryPower}, gold -${rec.mercenaryCost}`],
           hookPotential: 2,
         });
       }
@@ -471,10 +478,10 @@ function executeFactionAction(
     }
 
     case 'reform': {
-      const success = rng.chance(0.3);
+      const success = rng.chance(decay.reformSuccessChance);
       if (success) {
-        faction.corruption = clamp(faction.corruption - rng.int(3, 8), 0, 100);
-        faction.morale = clamp(faction.morale + 3, 0, 100);
+        faction.corruption = clamp(faction.corruption - rng.int(decay.reformAmountRange[0], decay.reformAmountRange[1]), 0, 100);
+        faction.morale = clamp(faction.morale + decay.reformMoraleGain, 0, 100);
         events.push({
           id: `reform_${faction.id}_t${state.turn}`,
           turn: state.turn,
@@ -488,7 +495,7 @@ function executeFactionAction(
           hookPotential: 3,
         });
       } else {
-        faction.gold = Math.max(0, faction.gold - 10);
+        faction.gold = Math.max(0, faction.gold - decay.reformFailCost);
         events.push({
           id: `reform_fail_${faction.id}_t${state.turn}`,
           turn: state.turn,
@@ -508,7 +515,7 @@ function executeFactionAction(
     case 'trade': {
       const loc = state.locations[action.locationId];
       if (!loc) break;
-      const income = Math.floor(loc.prosperity * 0.15) + rng.int(5, 15);
+      const income = Math.floor(loc.prosperity * rec.tradeIncomeRate) + rng.int(rec.tradeRandomRange[0], rec.tradeRandomRange[1]);
       faction.gold += income;
       events.push({
         id: `trade_${faction.id}_t${state.turn}`,
@@ -527,8 +534,7 @@ function executeFactionAction(
     }
 
     case 'lay_low': {
-      // Recover morale slightly
-      faction.morale = clamp(faction.morale + 2, 0, 100);
+      faction.morale = clamp(faction.morale + rec.layLowMoraleGain, 0, 100);
       break;
     }
   }
@@ -536,19 +542,20 @@ function executeFactionAction(
   return events;
 }
 
-function processConsequences(state: WorldState, events: WorldEvent[], rng: SeededRNG): void {
+function processConsequences(state: WorldState, events: WorldEvent[], rng: SeededRNG, config: SimulationConfig): void {
+  const ec = config.events;
   // Raids create refugees that flow to nearby towns
   for (const event of events) {
     if (event.type === 'raid' && event.locationId && event.text.includes('raids')) {
       const raidedLoc = state.locations[event.locationId];
       if (!raidedLoc) continue;
       // Refugees flow to connected locations
-      const refugees = rng.int(10, 30);
+      const refugees = rng.int(ec.refugeeRange[0], ec.refugeeRange[1]);
       for (const adjId of raidedLoc.connectedTo) {
         const adj = state.locations[adjId];
         if (adj && adj.population > 100) {
           adj.population += Math.floor(refugees / raidedLoc.connectedTo.length);
-          adj.prosperity = clamp(adj.prosperity - 1, 0, 100); // refugees strain resources
+          adj.prosperity = clamp(adj.prosperity - ec.refugeeProsperityCost, 0, 100);
         }
       }
     }

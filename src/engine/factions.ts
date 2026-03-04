@@ -1,5 +1,6 @@
 import type { WorldState, Faction, Location, FactionAction } from './types.js';
 import type { SeededRNG } from './rng.js';
+import type { SimulationConfig } from './config.js';
 
 /**
  * Each faction evaluates its situation and chooses an action.
@@ -8,34 +9,35 @@ import type { SeededRNG } from './rng.js';
 export function decideFactionAction(
   faction: Faction,
   state: WorldState,
-  rng: SeededRNG
+  rng: SeededRNG,
+  config: SimulationConfig
 ): FactionAction {
   switch (faction.type) {
     case 'empire':
-      return decideEmpireAction(faction, state, rng);
+      return decideEmpireAction(faction, state, rng, config);
     case 'noble':
-      return decideNobleAction(faction, state, rng);
+      return decideNobleAction(faction, state, rng, config);
     case 'bandit':
-      return decideBanditAction(faction, state, rng);
+      return decideBanditAction(faction, state, rng, config);
     case 'goblin':
-      return decideGoblinAction(faction, state, rng);
+      return decideGoblinAction(faction, state, rng, config);
     case 'merchant':
-      return decideMerchantAction(faction, state, rng);
+      return decideMerchantAction(faction, state, rng, config);
     default:
       return { type: 'lay_low' };
   }
 }
 
-function decideEmpireAction(faction: Faction, state: WorldState, rng: SeededRNG): FactionAction {
-  // Empire priorities: deal with corruption, collect taxes, patrol
+function decideEmpireAction(faction: Faction, state: WorldState, rng: SeededRNG, config: SimulationConfig): FactionAction {
+  const ai = config.factionAI.empire;
 
   // If corruption is critical, attempt reform
-  if (faction.corruption > 80 && rng.chance(0.3)) {
+  if (faction.corruption > ai.reformCorruptionThreshold && rng.chance(ai.reformChance)) {
     return { type: 'reform' };
   }
 
   // If gold is low, collect taxes
-  if (faction.gold < 100) {
+  if (faction.gold < ai.taxGoldThreshold) {
     return { type: 'collect_taxes' };
   }
 
@@ -49,7 +51,8 @@ function decideEmpireAction(faction: Faction, state: WorldState, rng: SeededRNG)
   return { type: 'collect_taxes' };
 }
 
-function decideNobleAction(faction: Faction, state: WorldState, rng: SeededRNG): FactionAction {
+function decideNobleAction(faction: Faction, state: WorldState, rng: SeededRNG, config: SimulationConfig): FactionAction {
+  const ai = config.factionAI.noble;
   const isAmbitious = faction.leaderTraits.includes('ambitious') || faction.leaderTraits.includes('calculating');
   const isPrincipled = faction.leaderTraits.includes('principled') || faction.leaderTraits.includes('brave');
 
@@ -57,14 +60,11 @@ function decideNobleAction(faction: Faction, state: WorldState, rng: SeededRNG):
   if (isPrincipled) {
     const threatened = findThreatenedLocations(faction, state);
     if (threatened.length > 0) {
-      // Fortify the most threatened location
       return { type: 'fortify', locationId: threatened[0].id };
     }
-    // Recruit if power is low
-    if (faction.power < faction.maxPower * 0.6) {
+    if (faction.power < faction.maxPower * ai.principledRecruitThreshold) {
       return { type: 'recruit' };
     }
-    // Patrol
     if (faction.controlledLocations.length > 0) {
       return { type: 'patrol', locationId: rng.pick(faction.controlledLocations) };
     }
@@ -72,20 +72,16 @@ function decideNobleAction(faction: Faction, state: WorldState, rng: SeededRNG):
 
   // Ambitious nobles scheme and build power
   if (isAmbitious) {
-    // Build strength
-    if (faction.power < faction.maxPower * 0.8) {
+    if (faction.power < faction.maxPower * ai.ambitiousRecruitThreshold) {
       return { type: 'recruit' };
     }
-    // Scheme if powerful enough
-    if (faction.power > faction.maxPower * 0.7 && rng.chance(0.4)) {
+    if (faction.power > faction.maxPower * ai.schemePowerThreshold && rng.chance(ai.schemeChance)) {
       return { type: 'scheme' };
     }
-    // Seek alliances with other powerful factions
     const potentialAlly = findPotentialAlly(faction, state);
-    if (potentialAlly && rng.chance(0.3)) {
+    if (potentialAlly && rng.chance(ai.allianceChance)) {
       return { type: 'seek_alliance', targetFactionId: potentialAlly.id };
     }
-    // Fortify holdings
     if (faction.controlledLocations.length > 0) {
       return { type: 'fortify', locationId: rng.pick(faction.controlledLocations) };
     }
@@ -94,26 +90,26 @@ function decideNobleAction(faction: Faction, state: WorldState, rng: SeededRNG):
   return { type: 'recruit' };
 }
 
-function decideBanditAction(faction: Faction, state: WorldState, rng: SeededRNG): FactionAction {
+function decideBanditAction(faction: Faction, state: WorldState, rng: SeededRNG, config: SimulationConfig): FactionAction {
+  const ai = config.factionAI.bandit;
   const isWinter = state.season === 'Winter';
-  const isDesperateForGold = faction.gold < 20;
-  const isStrong = faction.power > 20;
+  const isDesperateForGold = faction.gold < ai.desperateGoldThreshold;
+  const isStrong = faction.power > ai.expansionPowerThreshold;
 
   // Desperate: must raid
-  if (isDesperateForGold || (isWinter && faction.gold < 40)) {
+  if (isDesperateForGold || (isWinter && faction.gold < ai.winterGoldThreshold)) {
     const target = findRaidTarget(faction, state, rng);
     if (target) return { type: 'raid', targetLocationId: target.id };
   }
 
   // Check if empire patrols are nearby
   const empirePatrolNearby = isEmpirePatrolNearby(faction, state);
-  if (empirePatrolNearby && rng.chance(0.6)) {
-    // Lay low and recruit quietly
+  if (empirePatrolNearby && rng.chance(ai.cautionChance)) {
     return rng.chance(0.5) ? { type: 'lay_low' } : { type: 'recruit' };
   }
 
   // Strong enough to expand?
-  if (isStrong && rng.chance(0.3)) {
+  if (isStrong && rng.chance(ai.expansionChance)) {
     const expandTarget = findExpansionTarget(faction, state);
     if (expandTarget) {
       return { type: 'expand', targetLocationId: expandTarget.id };
@@ -121,32 +117,31 @@ function decideBanditAction(faction: Faction, state: WorldState, rng: SeededRNG)
   }
 
   // Opportunistic raid
-  if (rng.chance(0.5)) {
+  if (rng.chance(ai.raidChance)) {
     const target = findRaidTarget(faction, state, rng);
     if (target) return { type: 'raid', targetLocationId: target.id };
   }
 
-  // Recruit
   return { type: 'recruit' };
 }
 
-function decideGoblinAction(faction: Faction, state: WorldState, rng: SeededRNG): FactionAction {
-  // Goblins: aggressive expansion, raiding, and strength building
+function decideGoblinAction(faction: Faction, state: WorldState, rng: SeededRNG, config: SimulationConfig): FactionAction {
+  const ai = config.factionAI.goblin;
 
   // If strong, expand into weak territory
-  if (faction.power > 25 && rng.chance(0.4)) {
+  if (faction.power > ai.expansionPowerThreshold && rng.chance(ai.expansionChance)) {
     const target = findExpansionTarget(faction, state);
     if (target) return { type: 'expand', targetLocationId: target.id };
   }
 
   // Raid accessible settlements
-  if (rng.chance(0.5)) {
+  if (rng.chance(ai.raidChance)) {
     const target = findRaidTarget(faction, state, rng);
     if (target) return { type: 'raid', targetLocationId: target.id };
   }
 
   // Build strength
-  if (faction.power < faction.maxPower * 0.7) {
+  if (faction.power < faction.maxPower * ai.recruitPowerThreshold) {
     return { type: 'recruit' };
   }
 
@@ -158,23 +153,23 @@ function decideGoblinAction(faction: Faction, state: WorldState, rng: SeededRNG)
   return { type: 'recruit' };
 }
 
-function decideMerchantAction(faction: Faction, state: WorldState, rng: SeededRNG): FactionAction {
-  // Merchants: invest in safety, bribe for influence, hire mercs
+function decideMerchantAction(faction: Faction, state: WorldState, rng: SeededRNG, config: SimulationConfig): FactionAction {
+  const ai = config.factionAI.merchant;
 
   // If trade routes are threatened, hire mercenaries
   const threatsNearTrade = findThreatsNearTradeRoutes(faction, state);
-  if (threatsNearTrade && faction.gold > 50) {
+  if (threatsNearTrade && faction.gold > ai.hireGoldThreshold) {
     return { type: 'hire_mercenaries' };
   }
 
   // Invest in prosperous locations
-  if (faction.gold > 100 && rng.chance(0.4)) {
+  if (faction.gold > ai.investGoldThreshold && rng.chance(ai.investChance)) {
     const bestLoc = findBestInvestmentLocation(faction, state);
     if (bestLoc) return { type: 'invest', locationId: bestLoc.id };
   }
 
   // Bribe powerful factions for safety
-  if (faction.gold > 150 && rng.chance(0.3)) {
+  if (faction.gold > ai.bribeGoldThreshold && rng.chance(ai.bribeChance)) {
     const bribeTarget = findBribeTarget(faction, state);
     if (bribeTarget) return { type: 'bribe', targetFactionId: bribeTarget.id };
   }
@@ -194,7 +189,6 @@ function findThreatenedLocations(faction: Faction, state: WorldState): Location[
   for (const locId of faction.controlledLocations) {
     const loc = state.locations[locId];
     if (!loc) continue;
-    // Check if any enemy faction controls or is near adjacent locations
     for (const adjId of loc.connectedTo) {
       const adjLoc = state.locations[adjId];
       if (!adjLoc) continue;
@@ -209,7 +203,6 @@ function findThreatenedLocations(faction: Faction, state: WorldState): Location[
 }
 
 function findRaidTarget(faction: Faction, state: WorldState, rng: SeededRNG): Location | null {
-  // Find accessible locations that are prosperous and poorly defended
   const reachable = getReachableLocations(faction, state);
   const targets = reachable
     .filter(loc => {
@@ -217,7 +210,6 @@ function findRaidTarget(faction: Faction, state: WorldState, rng: SeededRNG): Lo
       return (!controller || controller.id !== faction.id) && loc.prosperity > 10;
     })
     .sort((a, b) => {
-      // Prefer: high prosperity, low defense
       const scoreA = a.prosperity - a.defense;
       const scoreB = b.prosperity - b.defense;
       return scoreB - scoreA;
@@ -225,14 +217,12 @@ function findRaidTarget(faction: Faction, state: WorldState, rng: SeededRNG): Lo
 
   if (targets.length === 0) return null;
 
-  // Pick from top targets with some randomness
   const topTargets = targets.slice(0, Math.min(3, targets.length));
   return rng.pick(topTargets);
 }
 
 function findExpansionTarget(faction: Faction, state: WorldState): Location | null {
   const reachable = getReachableLocations(faction, state);
-  // Look for uncontrolled or weakly held ruins/villages
   const candidates = reachable.filter(loc => {
     const controller = getLocationController(loc.id, state);
     return (!controller || controller.power < faction.power * 0.5) &&
@@ -255,7 +245,6 @@ function findPotentialAlly(faction: Faction, state: WorldState): Faction | null 
 function isEmpirePatrolNearby(faction: Faction, state: WorldState): boolean {
   const empire = state.factions['aurelian_crown'];
   if (!empire) return false;
-  // Check if any empire location is adjacent to bandit territory
   for (const locId of faction.controlledLocations) {
     const loc = state.locations[locId];
     if (!loc) continue;
@@ -290,7 +279,6 @@ function findBestInvestmentLocation(faction: Faction, state: WorldState): Locati
   for (const locId of faction.controlledLocations) {
     const loc = state.locations[locId];
     if (!loc) continue;
-    // Invest in locations with room to grow
     const score = (100 - loc.prosperity) + loc.population / 100;
     if (score > bestScore) {
       bestScore = score;
@@ -301,7 +289,6 @@ function findBestInvestmentLocation(faction: Faction, state: WorldState): Locati
 }
 
 function findBribeTarget(faction: Faction, state: WorldState): Faction | null {
-  // Bribe the strongest threatening faction
   return Object.values(state.factions).find(f =>
     f.type === 'noble' || f.type === 'empire'
   ) ?? null;
@@ -309,7 +296,6 @@ function findBribeTarget(faction: Faction, state: WorldState): Faction | null {
 
 function getReachableLocations(faction: Faction, state: WorldState): Location[] {
   const reachable = new Set<string>();
-  // Start from controlled locations and find adjacent ones
   for (const locId of faction.controlledLocations) {
     const loc = state.locations[locId];
     if (!loc) continue;
@@ -317,9 +303,7 @@ function getReachableLocations(faction: Faction, state: WorldState): Location[] 
       reachable.add(adjId);
     }
   }
-  // Nomadic factions (no territory) can reach locations near their enemies/known areas
   if (faction.controlledLocations.length === 0) {
-    // Can target any weakly defended location
     for (const loc of Object.values(state.locations)) {
       if (loc.defense < 20 && loc.prosperity > 10) {
         reachable.add(loc.id);
