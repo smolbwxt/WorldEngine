@@ -1,13 +1,11 @@
 import { useState, useCallback, useRef } from 'react';
 import type { Location, WorldState } from '../../engine/types.js';
 import TownMapView from './TownMapView.js';
-import { buildLocationPrompt, type MapGenResult } from '../../engine/mapImageGen.js';
+import { generateLocationScene, type MapGenResult } from '../../engine/mapImageGen.js';
 
 interface Props {
   location: Location | null;
   worldState: WorldState;
-  apiKey: string;
-  onRequestApiKey: () => void;
 }
 
 function StatBar({ value, max, className }: { value: number; max: number; className: string }) {
@@ -19,32 +17,20 @@ function StatBar({ value, max, className }: { value: number; max: number; classN
   );
 }
 
-// Standalone scene illustration for locations without a town map
+// Scene illustration for locations without a town map
 function LocationSceneGenerator({
   location,
   worldState,
-  apiKey,
-  onRequestApiKey,
 }: {
   location: Location;
   worldState: WorldState;
-  apiKey: string;
-  onRequestApiKey: () => void;
 }) {
   const [image, setImage] = useState<MapGenResult | null>(null);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const cacheRef = useRef<Map<string, MapGenResult>>(new Map());
 
-  const GEMINI_MODEL = 'gemini-3.1-flash-image-preview';
-  const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
-
   const handleGenerate = useCallback(async () => {
-    if (!apiKey) {
-      onRequestApiKey();
-      return;
-    }
-
     const cached = cacheRef.current.get(location.id);
     if (cached) {
       setImage(cached);
@@ -55,46 +41,7 @@ function LocationSceneGenerator({
     setError(null);
 
     try {
-      const prompt = buildLocationPrompt(location, worldState);
-
-      // Text-only prompt (no reference image for non-town locations)
-      const response = await fetch(`${GEMINI_ENDPOINT}?key=${apiKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{
-            parts: [{ text: prompt }],
-          }],
-          generationConfig: {
-            responseModalities: ['TEXT', 'IMAGE'],
-            imageConfig: {
-              aspectRatio: '3:2',
-              imageSize: '1K',
-            },
-          },
-        }),
-      });
-
-      if (!response.ok) {
-        const errBody = await response.text();
-        throw new Error(`Gemini API error (${response.status}): ${errBody}`);
-      }
-
-      const data = await response.json();
-      const candidate = data.candidates?.[0];
-      if (!candidate) throw new Error('No candidates in response');
-
-      const parts = candidate.content?.parts ?? [];
-      const imagePart = parts.find((p: { inline_data?: unknown }) => p.inline_data);
-      if (!imagePart?.inline_data) {
-        throw new Error('No image in response');
-      }
-
-      const result: MapGenResult = {
-        imageBase64: imagePart.inline_data.data,
-        mimeType: imagePart.inline_data.mimeType || 'image/png',
-        prompt,
-      };
+      const result = await generateLocationScene(location, worldState);
       cacheRef.current.set(location.id, result);
       setImage(result);
     } catch (err) {
@@ -102,7 +49,7 @@ function LocationSceneGenerator({
     } finally {
       setGenerating(false);
     }
-  }, [apiKey, location, worldState, onRequestApiKey]);
+  }, [location, worldState]);
 
   return (
     <div>
@@ -135,7 +82,7 @@ function LocationSceneGenerator({
   );
 }
 
-export default function LocationDetail({ location, worldState, apiKey, onRequestApiKey }: Props) {
+export default function LocationDetail({ location, worldState }: Props) {
   const [showTownMap, setShowTownMap] = useState(false);
 
   if (!location) {
@@ -181,8 +128,6 @@ export default function LocationDetail({ location, worldState, apiKey, onRequest
           <TownMapView
             location={location}
             worldState={worldState}
-            apiKey={apiKey}
-            onRequestApiKey={onRequestApiKey}
           />
         </div>
       )}
@@ -194,8 +139,6 @@ export default function LocationDetail({ location, worldState, apiKey, onRequest
           <LocationSceneGenerator
             location={location}
             worldState={worldState}
-            apiKey={apiKey}
-            onRequestApiKey={onRequestApiKey}
           />
         </div>
       )}

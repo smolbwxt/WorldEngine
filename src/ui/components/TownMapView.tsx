@@ -6,8 +6,6 @@ import { generateArtisticLocation, type MapGenResult } from '../../engine/mapIma
 interface Props {
   location: Location;
   worldState: WorldState;
-  apiKey: string;
-  onRequestApiKey: () => void;
 }
 
 // Color palette per tile type
@@ -62,7 +60,7 @@ const TILE_ICONS: Partial<Record<TileType, string>> = {
 
 type ViewMode = 'procedural' | 'artistic';
 
-export default function TownMapView({ location, worldState, apiKey, onRequestApiKey }: Props) {
+export default function TownMapView({ location, worldState }: Props) {
   const townMap = useMemo(() => generateTownMap(location), [location.id]);
   const [hoveredPOI, setHoveredPOI] = useState<PointOfInterest | null>(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
@@ -88,11 +86,6 @@ export default function TownMapView({ location, worldState, apiKey, onRequestApi
   }, [townMap]);
 
   const handleGenerate = useCallback(async () => {
-    if (!apiKey) {
-      onRequestApiKey();
-      return;
-    }
-
     // Check cache
     const cached = cacheRef.current.get(location.id);
     if (cached) {
@@ -105,7 +98,7 @@ export default function TownMapView({ location, worldState, apiKey, onRequestApi
     setGenError(null);
 
     try {
-      const result = await generateArtisticLocation(townMap, location, worldState, apiKey);
+      const result = await generateArtisticLocation(townMap, location, worldState);
       cacheRef.current.set(location.id, result);
       setArtisticImage(result);
       setViewMode('artistic');
@@ -116,7 +109,7 @@ export default function TownMapView({ location, worldState, apiKey, onRequestApi
     } finally {
       setGenerating(false);
     }
-  }, [apiKey, location, townMap, worldState, onRequestApiKey]);
+  }, [location, townMap, worldState]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
