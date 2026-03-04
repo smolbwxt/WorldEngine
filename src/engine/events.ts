@@ -1,15 +1,16 @@
 import type { WorldState, WorldEvent, EventTemplate, Season } from './types.js';
 import type { SeededRNG } from './rng.js';
+import type { SimulationConfig } from './config.js';
 import eventsPool from '../data/events-pool.json';
 import storyHooks from '../data/story-hooks.json';
 
 /** Process random world events for the turn */
-export function processRandomEvents(state: WorldState, rng: SeededRNG): WorldEvent[] {
+export function processRandomEvents(state: WorldState, rng: SeededRNG, config: SimulationConfig): WorldEvent[] {
   const events: WorldEvent[] = [];
   const templates = eventsPool as EventTemplate[];
 
-  // Roll for 0-2 random events per turn
-  const eventCount = rng.int(0, 2);
+  // Roll for 0-N random events per turn
+  const eventCount = rng.int(0, config.events.maxEventsPerTurn);
 
   for (let i = 0; i < eventCount; i++) {
     const eligible = templates.filter(t => meetsConditions(t, state));
