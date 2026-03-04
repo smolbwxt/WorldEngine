@@ -1,10 +1,13 @@
-import { useState } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import type { Location, WorldState } from '../../engine/types.js';
 import TownMapView from './TownMapView.js';
+import { buildLocationPrompt, type MapGenResult } from '../../engine/mapImageGen.js';
 
 interface Props {
   location: Location | null;
   worldState: WorldState;
+  apiKey: string;
+  onRequestApiKey: () => void;
 }
 
 function StatBar({ value, max, className }: { value: number; max: number; className: string }) {
@@ -16,7 +19,123 @@ function StatBar({ value, max, className }: { value: number; max: number; classN
   );
 }
 
-export default function LocationDetail({ location, worldState }: Props) {
+// Standalone scene illustration for locations without a town map
+function LocationSceneGenerator({
+  location,
+  worldState,
+  apiKey,
+  onRequestApiKey,
+}: {
+  location: Location;
+  worldState: WorldState;
+  apiKey: string;
+  onRequestApiKey: () => void;
+}) {
+  const [image, setImage] = useState<MapGenResult | null>(null);
+  const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const cacheRef = useRef<Map<string, MapGenResult>>(new Map());
+
+  const GEMINI_MODEL = 'gemini-3.1-flash-image-preview';
+  const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+
+  const handleGenerate = useCallback(async () => {
+    if (!apiKey) {
+      onRequestApiKey();
+      return;
+    }
+
+    const cached = cacheRef.current.get(location.id);
+    if (cached) {
+      setImage(cached);
+      return;
+    }
+
+    setGenerating(true);
+    setError(null);
+
+    try {
+      const prompt = buildLocationPrompt(location, worldState);
+
+      // Text-only prompt (no reference image for non-town locations)
+      const response = await fetch(`${GEMINI_ENDPOINT}?key=${apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{ text: prompt }],
+          }],
+          generationConfig: {
+            responseModalities: ['TEXT', 'IMAGE'],
+            imageConfig: {
+              aspectRatio: '3:2',
+              imageSize: '1K',
+            },
+          },
+        }),
+      });
+
+      if (!response.ok) {
+        const errBody = await response.text();
+        throw new Error(`Gemini API error (${response.status}): ${errBody}`);
+      }
+
+      const data = await response.json();
+      const candidate = data.candidates?.[0];
+      if (!candidate) throw new Error('No candidates in response');
+
+      const parts = candidate.content?.parts ?? [];
+      const imagePart = parts.find((p: { inline_data?: unknown }) => p.inline_data);
+      if (!imagePart?.inline_data) {
+        throw new Error('No image in response');
+      }
+
+      const result: MapGenResult = {
+        imageBase64: imagePart.inline_data.data,
+        mimeType: imagePart.inline_data.mimeType || 'image/png',
+        prompt,
+      };
+      cacheRef.current.set(location.id, result);
+      setImage(result);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setGenerating(false);
+    }
+  }, [apiKey, location, worldState, onRequestApiKey]);
+
+  return (
+    <div>
+      <div className="location-art-controls" style={{ marginBottom: 8 }}>
+        <button
+          className="map-control-btn map-control-btn--generate"
+          onClick={handleGenerate}
+          disabled={generating}
+        >
+          {generating ? 'Painting...' : 'Paint This Location'}
+        </button>
+        {error && <span className="map-control-error" title={error}>Error</span>}
+      </div>
+
+      {generating && (
+        <div className="location-scene-generating">
+          <div className="map-generating-spinner" />
+          <p>Painting {location.name}...</p>
+        </div>
+      )}
+
+      {image && (
+        <img
+          src={`data:${image.mimeType};base64,${image.imageBase64}`}
+          alt={`Artistic view of ${location.name}`}
+          className="location-scene-image"
+        />
+      )}
+    </div>
+  );
+}
+
+export default function LocationDetail({ location, worldState, apiKey, onRequestApiKey }: Props) {
   const [showTownMap, setShowTownMap] = useState(false);
 
   if (!location) {
@@ -59,7 +178,25 @@ export default function LocationDetail({ location, worldState }: Props) {
       {showTownMap && (
         <div className="card">
           <h3>Local Map — {location.name}</h3>
-          <TownMapView location={location} />
+          <TownMapView
+            location={location}
+            worldState={worldState}
+            apiKey={apiKey}
+            onRequestApiKey={onRequestApiKey}
+          />
+        </div>
+      )}
+
+      {/* Scene illustration for locations without town map open */}
+      {!showTownMap && (
+        <div className="card">
+          <h3>Scene — {location.name}</h3>
+          <LocationSceneGenerator
+            location={location}
+            worldState={worldState}
+            apiKey={apiKey}
+            onRequestApiKey={onRequestApiKey}
+          />
         </div>
       )}
 
