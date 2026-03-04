@@ -1,6 +1,7 @@
-import type { WorldState, Faction, WorldEvent } from './types.js';
+import type { WorldState, Location, Faction, WorldEvent } from './types.js';
 import type { TerrainMap, TerrainType } from './terrain.js';
 import { TERRAIN_COLORS } from './terrain.js';
+import type { TownMap, TileType } from './townmap.js';
 
 // ============================================================
 // Artistic Map Generator
@@ -248,6 +249,262 @@ export async function generateArtisticMap(
   const data = await response.json();
 
   // Extract image from response
+  const candidate = data.candidates?.[0];
+  if (!candidate) throw new Error('No candidates in Gemini response');
+
+  const parts = candidate.content?.parts ?? [];
+  const imagePart = parts.find((p: { inline_data?: unknown }) => p.inline_data);
+  if (!imagePart?.inline_data) {
+    throw new Error('No image in Gemini response. Text: ' + parts.map((p: { text?: string }) => p.text).filter(Boolean).join(' '));
+  }
+
+  return {
+    imageBase64: imagePart.inline_data.data,
+    mimeType: imagePart.inline_data.mimeType || 'image/png',
+    prompt,
+  };
+}
+
+// ============================================================
+// Location / Town Artistic Image Generation
+// ============================================================
+
+// Tile colors matching TownMapView.tsx for canvas rendering
+const TILE_COLORS: Record<TileType, string> = {
+  road:             '#8B7355',
+  building:         '#6B4C3B',
+  market:           '#B8860B',
+  tavern:           '#8B4513',
+  temple:           '#D4C5A9',
+  wall:             '#4A4A4A',
+  gate:             '#7B6B4F',
+  water:            '#2E5090',
+  park:             '#3A6B35',
+  ruins:            '#5C5040',
+  tower:            '#5A5A6A',
+  barracks:         '#5B3A29',
+  warehouse:        '#6B5B4F',
+  residential:      '#7B5B43',
+  well:             '#4A7A8C',
+  bridge:           '#8B7B6B',
+  field:            '#6B8E3A',
+  empty:            '#2A2520',
+  keep:             '#6B6B8B',
+  mine_entrance:    '#3A3A2A',
+  smithy:           '#8B4500',
+  stable:           '#6B5030',
+  inn:              '#7B5A3A',
+  graveyard:        '#3A4A3A',
+  dungeon_entrance: '#1A1A2E',
+};
+
+// === Town Map → Canvas PNG ===
+
+export function renderTownMapToPNG(townMap: TownMap): string {
+  const cellSize = 16;
+  const canvas = document.createElement('canvas');
+  canvas.width = townMap.width * cellSize;
+  canvas.height = townMap.height * cellSize;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Canvas context unavailable');
+
+  // Draw tiles
+  for (let y = 0; y < townMap.height; y++) {
+    for (let x = 0; x < townMap.width; x++) {
+      const tile = townMap.tiles[y][x];
+      ctx.fillStyle = TILE_COLORS[tile.type] ?? '#2A2520';
+      ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);
+      // Subtle grid
+      ctx.strokeStyle = 'rgba(0,0,0,0.2)';
+      ctx.lineWidth = 0.5;
+      ctx.strokeRect(x * cellSize, y * cellSize, cellSize, cellSize);
+    }
+  }
+
+  // Label POIs
+  ctx.font = `${cellSize * 0.6}px sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  for (const poi of townMap.pointsOfInterest) {
+    // Gold highlight for POIs
+    ctx.strokeStyle = '#d4a843';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(poi.x * cellSize, poi.y * cellSize, cellSize, cellSize);
+    // Name label
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    ctx.font = `${cellSize * 0.5}px sans-serif`;
+    ctx.fillText(
+      poi.name.substring(0, 12),
+      poi.x * cellSize + cellSize / 2,
+      poi.y * cellSize - cellSize * 0.3,
+    );
+  }
+
+  // Label districts
+  ctx.font = `bold ${cellSize * 0.8}px sans-serif`;
+  ctx.fillStyle = 'rgba(232,213,183,0.4)';
+  for (const d of townMap.districts) {
+    ctx.fillText(
+      d.name,
+      (d.x + d.w / 2) * cellSize,
+      (d.y + d.h / 2) * cellSize,
+    );
+  }
+
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+  return dataUrl.split(',')[1];
+}
+
+// === Location Prompt Builder ===
+
+const LOCATION_TYPE_DESCRIPTIONS: Record<string, string> = {
+  capital:  'a grand imperial capital city with marble colonnades, domed palaces, wide plazas, and imposing walls',
+  fortress: 'a massive military fortress with thick stone walls, guard towers, and a garrison courtyard',
+  castle:   'a noble castle with a keep, curtain walls, a great hall, and surrounding village',
+  town:     'a busy medieval market town with timber-framed buildings, cobbled streets, and a town square',
+  village:  'a small rural village with thatched-roof cottages, a village green, and farmland',
+  ruins:    'crumbling ruins overgrown with vegetation, collapsed walls and broken towers',
+  lair:     'a dark and foreboding monster lair — caves, crude fortifications, and an ominous entrance',
+  temple:   'a serene monastery or temple with cloisters, a chapel, herb gardens, and stone walls',
+  mine:     'a mountainside mining settlement with mine shaft entrances, ore carts, and worker barracks',
+  tower:    'a solitary watchtower on a high ridge, weathered stone, signal beacon at the top',
+  dungeon:  'a sinister dungeon entrance — a deep chasm or cave mouth leading into darkness',
+};
+
+function describeLocationSeason(season: string): string {
+  switch (season) {
+    case 'Spring': return 'spring light, fresh green growth, wildflowers, soft rain puddles';
+    case 'Summer': return 'warm golden sunlight, long shadows, dusty roads, bright banners';
+    case 'Autumn': return 'amber and russet leaves, grey skies, harvest bales, lantern-light';
+    case 'Winter': return 'frost-covered rooftops, bare trees, snowdrifts, chimney smoke, grey overcast';
+    default: return 'muted daylight';
+  }
+}
+
+function describeLocationMood(loc: Location, state: WorldState): string {
+  const parts: string[] = [];
+
+  // Prosperity → visual condition
+  if (loc.prosperity > 60) {
+    parts.push('The settlement thrives — well-maintained buildings, freshly painted signs, bustling activity.');
+  } else if (loc.prosperity > 30) {
+    parts.push('The settlement endures — functional but worn, some disrepair, quiet tension.');
+  } else if (loc.prosperity > 0) {
+    parts.push('The settlement decays — boarded windows, crumbling walls, empty market stalls, despair.');
+  }
+
+  // Defense → military presence
+  if (loc.defense > 60) {
+    parts.push('Heavy military presence: guards on every wall, fortifications reinforced, weapons stockpiled.');
+  } else if (loc.defense > 30) {
+    parts.push('Moderate defenses: a few guards patrol, walls are intact but not impressive.');
+  } else if (loc.defense > 0) {
+    parts.push('Barely defended — a broken gate, no guards in sight, vulnerable.');
+  }
+
+  // Population → activity level
+  if (loc.population > 3000) {
+    parts.push('Crowded streets, merchants hawking wares, a cacophony of city life.');
+  } else if (loc.population > 500) {
+    parts.push('Modest foot traffic, a few market stalls, people going about their business.');
+  } else if (loc.population > 0) {
+    parts.push('Nearly deserted — a handful of souls, eerie quiet.');
+  } else {
+    parts.push('Completely abandoned — only the wind moves here.');
+  }
+
+  // Recent events at this location
+  const localEvents = state.eventLog
+    .filter(e => e.locationId === loc.id)
+    .slice(-3);
+  if (localEvents.length > 0) {
+    parts.push('Recent events: ' + localEvents.map(e => e.narrative || e.text).join('. '));
+  }
+
+  return parts.join(' ');
+}
+
+export function buildLocationPrompt(loc: Location, state: WorldState): string {
+  const controller = Object.values(state.factions).find(f =>
+    f.controlledLocations.includes(loc.id)
+  );
+  const factionDesc = controller
+    ? `Controlled by ${controller.name}. Their banners and colors (${describeFactionState(controller)}) are visible throughout.`
+    : 'No faction controls this place — it is neutral or abandoned.';
+
+  const typeDesc = LOCATION_TYPE_DESCRIPTIONS[loc.type] ?? 'a fantasy location';
+  const seasonDesc = describeLocationSeason(state.season);
+  const mood = describeLocationMood(loc, state);
+
+  // Gather POI names from the reference image labels
+  const rumors = loc.rumors.length > 0
+    ? `Local rumors: ${loc.rumors.map(r => `"${r}"`).join('; ')}`
+    : '';
+
+  return [
+    `Transform this procedural tile map of "${loc.name}" into a richly detailed fantasy illustration, as if painted by a master artist for a tabletop RPG campaign book.`,
+    ``,
+    `This is ${typeDesc}. ${loc.description}`,
+    ``,
+    `Art style: Detailed digital painting in a classic fantasy RPG style — warm lighting, rich textures, atmospheric depth. Think concept art for a Baldur's Gate or Pillars of Eternity game. Bird's-eye / isometric perspective showing the full layout of the settlement. Each building should be distinct and architecturally detailed. Include people, animals, carts, market activity where appropriate.`,
+    ``,
+    `Season and atmosphere: ${seasonDesc}. It is ${state.season} of Year ${state.year}.`,
+    `${mood}`,
+    ``,
+    `${factionDesc}`,
+    ``,
+    rumors,
+    ``,
+    `IMPORTANT: Use the tile map reference image as a spatial guide for the layout — match the positions of roads, buildings, walls, gates, water features, and open areas. Transform the flat colored tiles into a richly detailed overhead view with depth, shadows, and architectural detail. Every building should look hand-crafted, not uniform. Add environmental storytelling — laundry on lines, carts in the road, torches in brackets, weathering on stone.`,
+  ].join('\n');
+}
+
+// === Location Artistic Image Generation ===
+
+export async function generateArtisticLocation(
+  townMap: TownMap,
+  loc: Location,
+  state: WorldState,
+  apiKey: string,
+): Promise<MapGenResult> {
+  // Step 1: Render town map to PNG
+  const townBase64 = renderTownMapToPNG(townMap);
+
+  // Step 2: Build location-specific prompt
+  const prompt = buildLocationPrompt(loc, state);
+
+  // Step 3: Call Gemini API
+  const response = await fetch(`${GEMINI_ENDPOINT}?key=${apiKey}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{
+        parts: [
+          { text: prompt },
+          {
+            inline_data: {
+              mime_type: 'image/jpeg',
+              data: townBase64,
+            },
+          },
+        ],
+      }],
+      generationConfig: {
+        responseModalities: ['TEXT', 'IMAGE'],
+        imageConfig: {
+          aspectRatio: '1:1',
+          imageSize: '1K',
+        },
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const errBody = await response.text();
+    throw new Error(`Gemini API error (${response.status}): ${errBody}`);
+  }
+
+  const data = await response.json();
   const candidate = data.candidates?.[0];
   if (!candidate) throw new Error('No candidates in Gemini response');
 

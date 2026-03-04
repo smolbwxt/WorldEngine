@@ -511,3 +511,55 @@ button.secondary:hover {
   opacity: 0.4;
   cursor: not-allowed;
 }
+
+/* Location artistic controls */
+.location-art-controls {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+/* Location generating overlay (inside the map container) */
+.location-generating-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(13, 21, 33, 0.85);
+  border-radius: 6px;
+}
+
+.location-generating-overlay p {
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  margin-top: 10px;
+}
+
+/* Scene illustration (for non-town locations) */
+.location-scene-generating {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(13, 21, 33, 0.5);
+  border-radius: 6px;
+  margin: 4px 0;
+}
+
+.location-scene-generating p {
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  margin-top: 10px;
+}
+
+.location-scene-image {
+  width: 100%;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  margin-top: 4px;
+}

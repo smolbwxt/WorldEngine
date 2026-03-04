@@ -1,12 +1,14 @@
-import { useState, useMemo, useCallback, useRef } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import type { WorldState, Faction, Location } from '../../engine/types.js';
 import { generateTerrain, TERRAIN_COLORS, type TerrainMap } from '../../engine/terrain.js';
-import { generateArtisticMap, buildMapPrompt, type MapGenResult } from '../../engine/mapImageGen.js';
+import { generateArtisticMap, type MapGenResult } from '../../engine/mapImageGen.js';
 
 interface Props {
   worldState: WorldState;
   selectedFaction: Faction | null;
   onLocationSelect: (loc: Location) => void;
+  apiKey: string;
+  onRequestApiKey: () => void;
 }
 
 const FACTION_COLORS: Record<string, string> = {
@@ -239,57 +241,13 @@ function MapControls({
   );
 }
 
-// API key input modal
-function ApiKeyModal({
-  onSubmit,
-  onCancel,
-}: {
-  onSubmit: (key: string) => void;
-  onCancel: () => void;
-}) {
-  const [key, setKey] = useState('');
-  return (
-    <div className="api-key-modal-overlay" onClick={onCancel}>
-      <div className="api-key-modal" onClick={e => e.stopPropagation()}>
-        <h3>Gemini API Key Required</h3>
-        <p>
-          Nano Banana 2 runs via the Gemini API. Enter your API key below, or set{' '}
-          <code>VITE_GEMINI_API_KEY</code> in your <code>.env</code> file.
-        </p>
-        <p style={{ fontSize: '0.8em', opacity: 0.7 }}>
-          Get a free key at{' '}
-          <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">
-            aistudio.google.com/apikey
-          </a>
-        </p>
-        <input
-          type="password"
-          placeholder="AIza..."
-          value={key}
-          onChange={e => setKey(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && key.trim() && onSubmit(key.trim())}
-          autoFocus
-        />
-        <div className="api-key-modal-actions">
-          <button onClick={onCancel}>Cancel</button>
-          <button onClick={() => key.trim() && onSubmit(key.trim())} disabled={!key.trim()}>
-            Generate Map
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-export default function WorldMap({ worldState, selectedFaction, onLocationSelect }: Props) {
+export default function WorldMap({ worldState, selectedFaction, onLocationSelect, apiKey, onRequestApiKey }: Props) {
   const [hoveredLoc, setHoveredLoc] = useState<Location | null>(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
   const [mapView, setMapView] = useState<MapView>('procedural');
   const [artisticMap, setArtisticMap] = useState<MapGenResult | null>(null);
   const [generating, setGenerating] = useState(false);
   const [genError, setGenError] = useState<string | null>(null);
-  const [showKeyModal, setShowKeyModal] = useState(false);
-  const apiKeyRef = useRef<string>(import.meta.env.VITE_GEMINI_API_KEY ?? '');
 
   const locations = Object.values(worldState.locations);
 
@@ -321,14 +279,11 @@ export default function WorldMap({ worldState, selectedFaction, onLocationSelect
     return lines;
   }, [locations, worldState.locations]);
 
-  const handleGenerate = useCallback(async (key?: string) => {
-    const apiKey = key || apiKeyRef.current;
+  const handleGenerate = useCallback(async () => {
     if (!apiKey) {
-      setShowKeyModal(true);
+      onRequestApiKey();
       return;
     }
-    apiKeyRef.current = apiKey;
-    setShowKeyModal(false);
     setGenerating(true);
     setGenError(null);
 
@@ -343,7 +298,7 @@ export default function WorldMap({ worldState, selectedFaction, onLocationSelect
     } finally {
       setGenerating(false);
     }
-  }, [terrain, worldState]);
+  }, [terrain, worldState, apiKey, onRequestApiKey]);
 
   const handleToggleView = useCallback(() => {
     setMapView(v => v === 'procedural' ? 'artistic' : 'procedural');
@@ -357,7 +312,7 @@ export default function WorldMap({ worldState, selectedFaction, onLocationSelect
       <MapControls
         view={mapView}
         onToggleView={handleToggleView}
-        onGenerate={() => handleGenerate()}
+        onGenerate={handleGenerate}
         generating={generating}
         hasArtistic={!!artisticMap}
         error={genError}
@@ -507,13 +462,6 @@ export default function WorldMap({ worldState, selectedFaction, onLocationSelect
         </div>
       )}
 
-      {/* API Key Modal */}
-      {showKeyModal && (
-        <ApiKeyModal
-          onSubmit={(key) => handleGenerate(key)}
-          onCancel={() => setShowKeyModal(false)}
-        />
-      )}
     </div>
   );
 }
