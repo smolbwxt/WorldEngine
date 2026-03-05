@@ -7,8 +7,6 @@ interface Props {
   worldState: WorldState;
   selectedFaction: Faction | null;
   onLocationSelect: (loc: Location) => void;
-  apiKey: string;
-  onRequestApiKey: () => void;
 }
 
 const FACTION_COLORS: Record<string, string> = {
@@ -241,7 +239,7 @@ function MapControls({
   );
 }
 
-export default function WorldMap({ worldState, selectedFaction, onLocationSelect, apiKey, onRequestApiKey }: Props) {
+export default function WorldMap({ worldState, selectedFaction, onLocationSelect }: Props) {
   const [hoveredLoc, setHoveredLoc] = useState<Location | null>(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
   const [mapView, setMapView] = useState<MapView>('procedural');
@@ -280,15 +278,11 @@ export default function WorldMap({ worldState, selectedFaction, onLocationSelect
   }, [locations, worldState.locations]);
 
   const handleGenerate = useCallback(async () => {
-    if (!apiKey) {
-      onRequestApiKey();
-      return;
-    }
     setGenerating(true);
     setGenError(null);
 
     try {
-      const result = await generateArtisticMap(terrain, worldState, apiKey);
+      const result = await generateArtisticMap(terrain, worldState);
       setArtisticMap(result);
       setMapView('artistic');
     } catch (err) {
@@ -298,7 +292,7 @@ export default function WorldMap({ worldState, selectedFaction, onLocationSelect
     } finally {
       setGenerating(false);
     }
-  }, [terrain, worldState, apiKey, onRequestApiKey]);
+  }, [terrain, worldState]);
 
   const handleToggleView = useCallback(() => {
     setMapView(v => v === 'procedural' ? 'artistic' : 'procedural');

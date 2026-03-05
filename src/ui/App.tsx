@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback } from 'react';
 import type { WorldState, TurnResult, Faction, Location } from '../engine/types.js';
 import { createInitialWorldState } from '../engine/world-state.js';
 import { resolveTurn } from '../engine/simulation.js';
@@ -12,48 +12,6 @@ import LocationDetail from './components/LocationDetail.js';
 type MainView = 'map' | 'dashboard';
 type SideView = 'factions' | 'chronicle' | 'location';
 
-// API key modal (shared across world map + location views)
-function ApiKeyModal({
-  onSubmit,
-  onCancel,
-}: {
-  onSubmit: (key: string) => void;
-  onCancel: () => void;
-}) {
-  const [key, setKey] = useState('');
-  return (
-    <div className="api-key-modal-overlay" onClick={onCancel}>
-      <div className="api-key-modal" onClick={e => e.stopPropagation()}>
-        <h3>Gemini API Key Required</h3>
-        <p>
-          Nano Banana 2 runs via the Gemini API. Enter your API key below, or set{' '}
-          <code>VITE_GEMINI_API_KEY</code> in your <code>.env</code> file.
-        </p>
-        <p style={{ fontSize: '0.8em', opacity: 0.7 }}>
-          Get a free key at{' '}
-          <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">
-            aistudio.google.com/apikey
-          </a>
-        </p>
-        <input
-          type="password"
-          placeholder="AIza..."
-          value={key}
-          onChange={e => setKey(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && key.trim() && onSubmit(key.trim())}
-          autoFocus
-        />
-        <div className="api-key-modal-actions">
-          <button onClick={onCancel}>Cancel</button>
-          <button onClick={() => key.trim() && onSubmit(key.trim())} disabled={!key.trim()}>
-            Save Key
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export default function App() {
   const [worldState, setWorldState] = useState<WorldState>(() => createInitialWorldState(42));
   const [turnResults, setTurnResults] = useState<TurnResult[]>([]);
@@ -61,21 +19,6 @@ export default function App() {
   const [sideView, setSideView] = useState<SideView>('factions');
   const [selectedFaction, setSelectedFaction] = useState<Faction | null>(null);
   const [selectedLocation, setSelectedLocation] = useState<Location | null>(null);
-  const [showKeyModal, setShowKeyModal] = useState(false);
-
-  // Shared API key state
-  const apiKeyRef = useRef<string>(import.meta.env.VITE_GEMINI_API_KEY ?? '');
-  const [apiKey, setApiKey] = useState<string>(apiKeyRef.current);
-
-  const handleSetApiKey = useCallback((key: string) => {
-    apiKeyRef.current = key;
-    setApiKey(key);
-    setShowKeyModal(false);
-  }, []);
-
-  const handleRequestApiKey = useCallback(() => {
-    setShowKeyModal(true);
-  }, []);
 
   const advanceTurn = useCallback(() => {
     setWorldState(prev => {
@@ -145,8 +88,6 @@ export default function App() {
             worldState={worldState}
             selectedFaction={selectedFaction}
             onLocationSelect={handleLocationSelect}
-            apiKey={apiKey}
-            onRequestApiKey={handleRequestApiKey}
           />
         ) : (
           <Dashboard worldState={worldState} turnResults={turnResults} />
@@ -189,8 +130,6 @@ export default function App() {
           <LocationDetail
             location={selectedLocation}
             worldState={worldState}
-            apiKey={apiKey}
-            onRequestApiKey={handleRequestApiKey}
           />
         )}
       </div>
@@ -202,14 +141,6 @@ export default function App() {
         currentTurn={worldState.turn}
         latestResult={turnResults[turnResults.length - 1] ?? null}
       />
-
-      {/* Shared API Key Modal */}
-      {showKeyModal && (
-        <ApiKeyModal
-          onSubmit={handleSetApiKey}
-          onCancel={() => setShowKeyModal(false)}
-        />
-      )}
     </div>
   );
 }

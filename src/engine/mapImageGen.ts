@@ -4,16 +4,17 @@ import { TERRAIN_COLORS } from './terrain.js';
 import type { TownMap, TileType } from './townmap.js';
 
 // ============================================================
-// Artistic Map Generator
+// Artistic Map Generator — powered by Puter.js
 //
 // 1. Renders procedural terrain to a canvas PNG (spatial reference)
 // 2. Builds a narrative prompt from the live WorldState
-// 3. Sends both to Nano Banana 2 (Gemini) as img2img
+// 3. Sends both to an AI image model via Puter.js (img2img)
 // 4. Returns the artistic map image
+//
+// No API key required — Puter.js handles auth transparently.
 // ============================================================
 
-const GEMINI_MODEL = 'gemini-3.1-flash-image-preview';
-const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+const PUTER_MODEL = 'gemini-2.5-flash-image-preview';
 
 // === SVG Terrain → Canvas PNG ===
 
@@ -113,7 +114,6 @@ function describeConflictZones(state: WorldState): string {
     for (const enemyId of f.enemies) {
       const enemy = state.factions[enemyId];
       if (!enemy) continue;
-      // Find overlapping or adjacent territories
       for (const locId of f.controlledLocations) {
         const loc = state.locations[locId];
         if (!loc) continue;
@@ -132,7 +132,6 @@ function describeGeography(state: WorldState): string {
   const parts: string[] = [];
   const locs = Object.values(state.locations);
 
-  // Find region descriptions
   const westernLocs = locs.filter(l => l.x < 30);
   const easternLocs = locs.filter(l => l.x > 65);
   const centralLocs = locs.filter(l => l.x >= 30 && l.x <= 65 && l.y >= 25 && l.y <= 60);
@@ -157,7 +156,6 @@ export function buildMapPrompt(state: WorldState): string {
   const conflicts = describeConflictZones(state);
   const geography = describeGeography(state);
 
-  // Determine the overall mood
   const avgCorruption = factions.reduce((s, f) => s + f.corruption, 0) / factions.length;
   const totalPower = factions.reduce((s, f) => s + f.power, 0);
   const maxTotalPower = factions.reduce((s, f) => s + f.maxPower, 0);
@@ -196,7 +194,7 @@ export function buildMapPrompt(state: WorldState): string {
   ].join('\n');
 }
 
-// === Gemini API Call ===
+// === Puter.js helpers ===
 
 export interface MapGenResult {
   imageBase64: string;
@@ -204,72 +202,51 @@ export interface MapGenResult {
   prompt: string;
 }
 
+/** Extract base64 data and mime type from an HTMLImageElement's data URL src */
+function extractImageData(img: HTMLImageElement): { base64: string; mimeType: string } {
+  const src = img.src;
+  const match = src.match(/^data:(image\/[^;]+);base64,(.+)$/);
+  if (match) {
+    return { mimeType: match[1], base64: match[2] };
+  }
+  // Fallback: draw to canvas to extract base64
+  const canvas = document.createElement('canvas');
+  canvas.width = img.naturalWidth || img.width || 512;
+  canvas.height = img.naturalHeight || img.height || 512;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Canvas context unavailable');
+  ctx.drawImage(img, 0, 0);
+  const dataUrl = canvas.toDataURL('image/png');
+  const fallbackMatch = dataUrl.match(/^data:(image\/[^;]+);base64,(.+)$/);
+  if (fallbackMatch) {
+    return { mimeType: fallbackMatch[1], base64: fallbackMatch[2] };
+  }
+  throw new Error('Could not extract image data');
+}
+
+// === World Map Generation ===
+
 export async function generateArtisticMap(
   terrain: TerrainMap,
   state: WorldState,
-  apiKey: string,
 ): Promise<MapGenResult> {
-  // Step 1: Render terrain to PNG
   const terrainBase64 = await renderTerrainToPNG(terrain);
-
-  // Step 2: Build narrative prompt
   const prompt = buildMapPrompt(state);
 
-  // Step 3: Call Gemini API
-  const response = await fetch(`${GEMINI_ENDPOINT}?key=${apiKey}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{
-        parts: [
-          { text: prompt },
-          {
-            inline_data: {
-              mime_type: 'image/jpeg',
-              data: terrainBase64,
-            },
-          },
-        ],
-      }],
-      generationConfig: {
-        responseModalities: ['TEXT', 'IMAGE'],
-        imageConfig: {
-          aspectRatio: '1:1',
-          imageSize: '1K',
-        },
-      },
-    }),
+  const img = await puter.ai.txt2img(prompt, {
+    model: PUTER_MODEL,
+    input_image: terrainBase64,
+    input_image_mime_type: 'image/jpeg',
   });
 
-  if (!response.ok) {
-    const errBody = await response.text();
-    throw new Error(`Gemini API error (${response.status}): ${errBody}`);
-  }
-
-  const data = await response.json();
-
-  // Extract image from response
-  const candidate = data.candidates?.[0];
-  if (!candidate) throw new Error('No candidates in Gemini response');
-
-  const parts = candidate.content?.parts ?? [];
-  const imagePart = parts.find((p: { inline_data?: unknown }) => p.inline_data);
-  if (!imagePart?.inline_data) {
-    throw new Error('No image in Gemini response. Text: ' + parts.map((p: { text?: string }) => p.text).filter(Boolean).join(' '));
-  }
-
-  return {
-    imageBase64: imagePart.inline_data.data,
-    mimeType: imagePart.inline_data.mimeType || 'image/png',
-    prompt,
-  };
+  const { base64, mimeType } = extractImageData(img);
+  return { imageBase64: base64, mimeType, prompt };
 }
 
 // ============================================================
 // Location / Town Artistic Image Generation
 // ============================================================
 
-// Tile colors matching TownMapView.tsx for canvas rendering
 const TILE_COLORS: Record<TileType, string> = {
   road:             '#8B7355',
   building:         '#6B4C3B',
@@ -298,8 +275,6 @@ const TILE_COLORS: Record<TileType, string> = {
   dungeon_entrance: '#1A1A2E',
 };
 
-// === Town Map → Canvas PNG ===
-
 export function renderTownMapToPNG(townMap: TownMap): string {
   const cellSize = 16;
   const canvas = document.createElement('canvas');
@@ -308,29 +283,24 @@ export function renderTownMapToPNG(townMap: TownMap): string {
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('Canvas context unavailable');
 
-  // Draw tiles
   for (let y = 0; y < townMap.height; y++) {
     for (let x = 0; x < townMap.width; x++) {
       const tile = townMap.tiles[y][x];
       ctx.fillStyle = TILE_COLORS[tile.type] ?? '#2A2520';
       ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);
-      // Subtle grid
       ctx.strokeStyle = 'rgba(0,0,0,0.2)';
       ctx.lineWidth = 0.5;
       ctx.strokeRect(x * cellSize, y * cellSize, cellSize, cellSize);
     }
   }
 
-  // Label POIs
   ctx.font = `${cellSize * 0.6}px sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   for (const poi of townMap.pointsOfInterest) {
-    // Gold highlight for POIs
     ctx.strokeStyle = '#d4a843';
     ctx.lineWidth = 2;
     ctx.strokeRect(poi.x * cellSize, poi.y * cellSize, cellSize, cellSize);
-    // Name label
     ctx.fillStyle = 'rgba(255,255,255,0.6)';
     ctx.font = `${cellSize * 0.5}px sans-serif`;
     ctx.fillText(
@@ -340,7 +310,6 @@ export function renderTownMapToPNG(townMap: TownMap): string {
     );
   }
 
-  // Label districts
   ctx.font = `bold ${cellSize * 0.8}px sans-serif`;
   ctx.fillStyle = 'rgba(232,213,183,0.4)';
   for (const d of townMap.districts) {
@@ -384,7 +353,6 @@ function describeLocationSeason(season: string): string {
 function describeLocationMood(loc: Location, state: WorldState): string {
   const parts: string[] = [];
 
-  // Prosperity → visual condition
   if (loc.prosperity > 60) {
     parts.push('The settlement thrives — well-maintained buildings, freshly painted signs, bustling activity.');
   } else if (loc.prosperity > 30) {
@@ -393,7 +361,6 @@ function describeLocationMood(loc: Location, state: WorldState): string {
     parts.push('The settlement decays — boarded windows, crumbling walls, empty market stalls, despair.');
   }
 
-  // Defense → military presence
   if (loc.defense > 60) {
     parts.push('Heavy military presence: guards on every wall, fortifications reinforced, weapons stockpiled.');
   } else if (loc.defense > 30) {
@@ -402,7 +369,6 @@ function describeLocationMood(loc: Location, state: WorldState): string {
     parts.push('Barely defended — a broken gate, no guards in sight, vulnerable.');
   }
 
-  // Population → activity level
   if (loc.population > 3000) {
     parts.push('Crowded streets, merchants hawking wares, a cacophony of city life.');
   } else if (loc.population > 500) {
@@ -413,7 +379,6 @@ function describeLocationMood(loc: Location, state: WorldState): string {
     parts.push('Completely abandoned — only the wind moves here.');
   }
 
-  // Recent events at this location
   const localEvents = state.eventLog
     .filter(e => e.locationId === loc.id)
     .slice(-3);
@@ -436,7 +401,6 @@ export function buildLocationPrompt(loc: Location, state: WorldState): string {
   const seasonDesc = describeLocationSeason(state.season);
   const mood = describeLocationMood(loc, state);
 
-  // Gather POI names from the reference image labels
   const rumors = loc.rumors.length > 0
     ? `Local rumors: ${loc.rumors.map(r => `"${r}"`).join('; ')}`
     : '';
@@ -465,58 +429,31 @@ export async function generateArtisticLocation(
   townMap: TownMap,
   loc: Location,
   state: WorldState,
-  apiKey: string,
 ): Promise<MapGenResult> {
-  // Step 1: Render town map to PNG
   const townBase64 = renderTownMapToPNG(townMap);
-
-  // Step 2: Build location-specific prompt
   const prompt = buildLocationPrompt(loc, state);
 
-  // Step 3: Call Gemini API
-  const response = await fetch(`${GEMINI_ENDPOINT}?key=${apiKey}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{
-        parts: [
-          { text: prompt },
-          {
-            inline_data: {
-              mime_type: 'image/jpeg',
-              data: townBase64,
-            },
-          },
-        ],
-      }],
-      generationConfig: {
-        responseModalities: ['TEXT', 'IMAGE'],
-        imageConfig: {
-          aspectRatio: '1:1',
-          imageSize: '1K',
-        },
-      },
-    }),
+  const img = await puter.ai.txt2img(prompt, {
+    model: PUTER_MODEL,
+    input_image: townBase64,
+    input_image_mime_type: 'image/jpeg',
   });
 
-  if (!response.ok) {
-    const errBody = await response.text();
-    throw new Error(`Gemini API error (${response.status}): ${errBody}`);
-  }
+  const { base64, mimeType } = extractImageData(img);
+  return { imageBase64: base64, mimeType, prompt };
+}
 
-  const data = await response.json();
-  const candidate = data.candidates?.[0];
-  if (!candidate) throw new Error('No candidates in Gemini response');
+/** Generate a scene illustration for a location (text-only, no reference image) */
+export async function generateLocationScene(
+  loc: Location,
+  state: WorldState,
+): Promise<MapGenResult> {
+  const prompt = buildLocationPrompt(loc, state);
 
-  const parts = candidate.content?.parts ?? [];
-  const imagePart = parts.find((p: { inline_data?: unknown }) => p.inline_data);
-  if (!imagePart?.inline_data) {
-    throw new Error('No image in Gemini response. Text: ' + parts.map((p: { text?: string }) => p.text).filter(Boolean).join(' '));
-  }
+  const img = await puter.ai.txt2img(prompt, {
+    model: PUTER_MODEL,
+  });
 
-  return {
-    imageBase64: imagePart.inline_data.data,
-    mimeType: imagePart.inline_data.mimeType || 'image/png',
-    prompt,
-  };
+  const { base64, mimeType } = extractImageData(img);
+  return { imageBase64: base64, mimeType, prompt };
 }
