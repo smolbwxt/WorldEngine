@@ -28,10 +28,12 @@ function LocationSceneGenerator({
   const [image, setImage] = useState<MapGenResult | null>(null);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [userDesc, setUserDesc] = useState('');
   const cacheRef = useRef<Map<string, MapGenResult>>(new Map());
 
   const handleGenerate = useCallback(async () => {
-    const cached = cacheRef.current.get(location.id);
+    const cacheKey = `${location.id}_${userDesc}`;
+    const cached = cacheRef.current.get(cacheKey);
     if (cached) {
       setImage(cached);
       return;
@@ -41,18 +43,31 @@ function LocationSceneGenerator({
     setError(null);
 
     try {
-      const result = await generateLocationScene(location, worldState);
-      cacheRef.current.set(location.id, result);
+      const result = await generateLocationScene(location, worldState, userDesc || undefined);
+      cacheRef.current.set(cacheKey, result);
       setImage(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setGenerating(false);
     }
-  }, [location, worldState]);
+  }, [location, worldState, userDesc]);
 
   return (
     <div>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+        <input
+          type="text"
+          placeholder="Add to description (optional)..."
+          value={userDesc}
+          onChange={e => setUserDesc(e.target.value)}
+          style={{
+            flex: 1, padding: '4px 8px', fontSize: '0.75rem',
+            background: 'var(--bg-secondary)', border: '1px solid var(--border-color)',
+            borderRadius: 4, color: 'var(--text-primary)',
+          }}
+        />
+      </div>
       <div className="location-art-controls" style={{ marginBottom: 8 }}>
         <button
           className="map-control-btn map-control-btn--generate"

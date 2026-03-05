@@ -246,6 +246,7 @@ export default function WorldMap({ worldState, selectedFaction, onLocationSelect
   const [artisticMap, setArtisticMap] = useState<MapGenResult | null>(null);
   const [generating, setGenerating] = useState(false);
   const [genError, setGenError] = useState<string | null>(null);
+  const [userDesc, setUserDesc] = useState('');
 
   const locations = Object.values(worldState.locations);
 
@@ -282,7 +283,7 @@ export default function WorldMap({ worldState, selectedFaction, onLocationSelect
     setGenError(null);
 
     try {
-      const result = await generateArtisticMap(terrain, worldState);
+      const result = await generateArtisticMap(terrain, worldState, userDesc || undefined);
       setArtisticMap(result);
       setMapView('artistic');
     } catch (err) {
@@ -292,7 +293,7 @@ export default function WorldMap({ worldState, selectedFaction, onLocationSelect
     } finally {
       setGenerating(false);
     }
-  }, [terrain, worldState]);
+  }, [terrain, worldState, userDesc]);
 
   const handleToggleView = useCallback(() => {
     setMapView(v => v === 'procedural' ? 'artistic' : 'procedural');
@@ -302,6 +303,21 @@ export default function WorldMap({ worldState, selectedFaction, onLocationSelect
 
   return (
     <div className="world-map">
+      {/* Description input */}
+      <div style={{ display: 'flex', gap: 6, padding: '0 4px', marginBottom: 4 }}>
+        <input
+          type="text"
+          placeholder="Add to description (optional)..."
+          value={userDesc}
+          onChange={e => setUserDesc(e.target.value)}
+          style={{
+            flex: 1, padding: '4px 8px', fontSize: '0.75rem',
+            background: 'var(--bg-secondary)', border: '1px solid var(--border-color)',
+            borderRadius: 4, color: 'var(--text-primary)',
+          }}
+        />
+      </div>
+
       {/* Controls */}
       <MapControls
         view={mapView}

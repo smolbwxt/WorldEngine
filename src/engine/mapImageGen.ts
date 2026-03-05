@@ -2,6 +2,7 @@ import type { WorldState, Location, Faction, WorldEvent } from './types.js';
 import type { TerrainMap, TerrainType } from './terrain.js';
 import { TERRAIN_COLORS } from './terrain.js';
 import type { TownMap, TileType } from './townmap.js';
+import type { BuildingInterior, InteriorTileType } from './buildings.js';
 
 // ============================================================
 // Artistic Map Generator — powered by Puter.js
@@ -246,9 +247,11 @@ async function extractImageData(img: HTMLImageElement): Promise<{ base64: string
 export async function generateArtisticMap(
   terrain: TerrainMap,
   state: WorldState,
+  userDescription?: string,
 ): Promise<MapGenResult> {
   const terrainBase64 = await renderTerrainToPNG(terrain);
-  const prompt = buildMapPrompt(state);
+  let prompt = buildMapPrompt(state);
+  if (userDescription) prompt += `\n\nAdditional details: ${userDescription}`;
 
   const img = await puter.ai.txt2img(prompt, {
     model: PUTER_MODEL,
@@ -446,9 +449,11 @@ export async function generateArtisticLocation(
   townMap: TownMap,
   loc: Location,
   state: WorldState,
+  userDescription?: string,
 ): Promise<MapGenResult> {
   const townBase64 = renderTownMapToPNG(townMap);
-  const prompt = buildLocationPrompt(loc, state);
+  let prompt = buildLocationPrompt(loc, state);
+  if (userDescription) prompt += `\n\nAdditional details: ${userDescription}`;
 
   const img = await puter.ai.txt2img(prompt, {
     model: PUTER_MODEL,
@@ -464,11 +469,146 @@ export async function generateArtisticLocation(
 export async function generateLocationScene(
   loc: Location,
   state: WorldState,
+  userDescription?: string,
 ): Promise<MapGenResult> {
-  const prompt = buildLocationPrompt(loc, state);
+  let prompt = buildLocationPrompt(loc, state);
+  if (userDescription) prompt += `\n\nAdditional details: ${userDescription}`;
 
   const img = await puter.ai.txt2img(prompt, {
     model: PUTER_MODEL,
+  });
+
+  const { base64, mimeType } = await extractImageData(img);
+  return { imageBase64: base64, mimeType, prompt };
+}
+
+// ============================================================
+// Building Interior Artistic Generation
+// ============================================================
+
+const INTERIOR_TILE_COLORS: Record<InteriorTileType, string> = {
+  floor_stone:     '#3A3830',
+  floor_wood:      '#5C4A35',
+  floor_dirt:      '#3A3225',
+  wall:            '#2A2A28',
+  wall_damaged:    '#3A3835',
+  door:            '#6B5A40',
+  door_locked:     '#5A4A35',
+  pillar:          '#4A4A48',
+  stairs_up:       '#5A6A5A',
+  stairs_down:     '#3A3A4A',
+  table:           '#6B5030',
+  chair:           '#5A4528',
+  counter:         '#6B5A3A',
+  barrel:          '#5A4020',
+  crate:           '#5A4828',
+  bookshelf:       '#4A3520',
+  altar:           '#8A8A7A',
+  hearth:          '#8B3A10',
+  fire_pit:        '#A04010',
+  acid_pool:       '#2A6A30',
+  pit_trap:        '#1A1A15',
+  collapsed_floor: '#2A2520',
+  rubble:          '#4A4538',
+  water_shallow:   '#2A4A6A',
+  bed:             '#5A4A60',
+  chest:           '#6A5A20',
+  weapon_rack:     '#4A4A5A',
+  throne:          '#6A5A30',
+  cage:            '#3A3A3A',
+  sarcophagus:     '#5A5A58',
+};
+
+export function renderInteriorToPNG(interior: BuildingInterior): string {
+  const cellSize = 24;
+  const canvas = document.createElement('canvas');
+  canvas.width = interior.width * cellSize;
+  canvas.height = interior.height * cellSize;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Canvas context unavailable');
+
+  for (let y = 0; y < interior.height; y++) {
+    for (let x = 0; x < interior.width; x++) {
+      const tile = interior.tiles[y][x];
+      ctx.fillStyle = INTERIOR_TILE_COLORS[tile.type] ?? '#2A2520';
+      ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);
+
+      if (tile.isHazard) {
+        ctx.fillStyle = 'rgba(255,0,0,0.3)';
+        ctx.fillRect(x * cellSize + 2, y * cellSize + 2, cellSize - 4, cellSize - 4);
+      }
+
+      if (tile.blocksLOS && tile.type !== 'wall') {
+        ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x * cellSize + 1, y * cellSize + 1, cellSize - 2, cellSize - 2);
+      }
+
+      ctx.strokeStyle = 'rgba(0,0,0,0.15)';
+      ctx.lineWidth = 0.5;
+      ctx.strokeRect(x * cellSize, y * cellSize, cellSize, cellSize);
+    }
+  }
+
+  ctx.font = `${cellSize * 0.4}px sans-serif`;
+  ctx.fillStyle = 'rgba(255,255,255,0.6)';
+  ctx.textAlign = 'center';
+  for (const poi of interior.pointsOfInterest) {
+    ctx.fillText(poi.name.substring(0, 10), poi.x * cellSize + cellSize / 2, poi.y * cellSize - 2);
+  }
+
+  ctx.fillStyle = 'rgba(100,255,100,0.5)';
+  for (const entry of interior.entryPoints) {
+    ctx.fillRect(entry.x * cellSize + 4, entry.y * cellSize + 4, cellSize - 8, cellSize - 8);
+  }
+
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+  return dataUrl.split(',')[1];
+}
+
+export function buildInteriorPrompt(interior: BuildingInterior, loc: Location, state: WorldState): string {
+  const hazards = interior.tiles.flat().filter(t => t.isHazard);
+  const hazardDesc = hazards.length > 0
+    ? `Environmental hazards present: ${[...new Set(hazards.map(h => h.hazardType))].join(', ')}.`
+    : '';
+
+  const coverCount = interior.tiles.flat().filter(t => t.providesCover).length;
+  const losBlockers = interior.tiles.flat().filter(t => t.blocksLOS && t.type !== 'wall').length;
+
+  const controller = Object.values(state.factions).find(f => f.controlledLocations.includes(loc.id));
+  const factionDesc = controller
+    ? `This building bears the marks of ${controller.name} — their colors, banners, and style.`
+    : '';
+
+  return [
+    `Transform this procedural building interior map of "${interior.name}" (inside ${loc.name}) into a detailed top-down tactical RPG battle map illustration.`,
+    ``,
+    `This is a ${interior.buildingType} interior. ${loc.description}`,
+    ``,
+    `Art style: Detailed top-down digital painting suitable for a tabletop RPG battle map. Rich textures for stone floors, wooden planks, dirt. Individual tiles should be visible as a grid. Warm lighting from torches and hearths. Shadows cast by pillars and furniture. Think Roll20 or Foundry VTT quality battle map.`,
+    ``,
+    `Combat-relevant details: ${coverCount} cover positions (tables, pillars, barrels), ${losBlockers} line-of-sight blockers. ${hazardDesc}`,
+    ``,
+    `Season: ${state.season}. ${factionDesc}`,
+    ``,
+    `IMPORTANT: Preserve the exact tile layout — walls, doors, furniture positions, and open spaces must match the reference. Add rich texture, lighting, and atmosphere but keep the spatial layout for tactical gameplay. Every tile should be clearly defined for grid-based combat.`,
+  ].join('\n');
+}
+
+export async function generateArtisticInterior(
+  interior: BuildingInterior,
+  loc: Location,
+  state: WorldState,
+  userDescription?: string,
+): Promise<MapGenResult> {
+  const interiorBase64 = renderInteriorToPNG(interior);
+  let prompt = buildInteriorPrompt(interior, loc, state);
+  if (userDescription) prompt += `\n\nAdditional details: ${userDescription}`;
+
+  const img = await puter.ai.txt2img(prompt, {
+    model: PUTER_MODEL,
+    input_image: interiorBase64,
+    input_image_mime_type: 'image/jpeg',
   });
 
   const { base64, mimeType } = await extractImageData(img);

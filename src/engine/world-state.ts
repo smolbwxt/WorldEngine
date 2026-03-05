@@ -20,6 +20,7 @@ export function createInitialWorldState(seed?: number): WorldState {
     season: 'Spring',
     factions,
     locations,
+    activeTreaties: [],
     eventLog: [],
     storyBeatsTriggered: [],
     rngSeed: seed ?? Date.now(),

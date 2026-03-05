@@ -1,10 +1,11 @@
-import type { WorldState, WorldEvent, TurnResult, Faction, FactionAction } from './types.js';
+import type { WorldState, WorldEvent, TurnResult, Faction, FactionAction, Treaty } from './types.js';
 import { advanceSeason, clamp } from './world-state.js';
 import { SeededRNG } from './rng.js';
 import { processEconomy } from './economy.js';
 import { decideFactionAction, getLocationController } from './factions.js';
 import { resolveRaid, resolveCombat } from './combat.js';
 import { processRandomEvents, processStoryHooks } from './events.js';
+import { decideTreatyProposal, evaluateTreatyProposal, executeTreaty } from './treaties.js';
 import type { SimulationConfig } from './config.js';
 import { DEFAULT_CONFIG } from './config.js';
 
@@ -45,6 +46,36 @@ export function resolveTurn(state: WorldState, config: SimulationConfig = DEFAUL
     // Record the action
     const actionDesc = describeFactionAction(faction, action);
     faction.recentActions = [actionDesc, ...faction.recentActions.slice(0, 4)];
+  }
+
+  // 4b. Treaty Proposal Phase — factions with high dealmaking try negotiations
+  for (const faction of Object.values(state.factions)) {
+    const proposal = decideTreatyProposal(faction, state, rng, config);
+    if (proposal) {
+      const target = state.factions[proposal.targetId];
+      if (target) {
+        const accepted = evaluateTreatyProposal(faction, target, proposal.type, proposal.terms, state, rng, config);
+        if (accepted) {
+          const treaty: Treaty = {
+            id: `treaty_${faction.id}_${target.id}_t${state.turn}`,
+            type: proposal.type,
+            parties: [faction.id, target.id],
+            terms: proposal.terms,
+            createdTurn: state.turn,
+          };
+          events.push(...executeTreaty(faction, target, treaty, state));
+        } else {
+          events.push({
+            id: `treaty_reject_${faction.id}_${target.id}_t${state.turn}`,
+            turn: state.turn, season: state.season, year: state.year,
+            type: 'treaty',
+            text: `${faction.name} proposes a ${proposal.type.replace(/_/g, ' ')} to ${target.name}, but is refused.`,
+            icon: '📜', factionId: faction.id,
+            consequences: [], hookPotential: 2,
+          });
+        }
+      }
+    }
   }
 
   // 5. Consequence Phase — update relationships based on events
@@ -157,7 +188,12 @@ function executeFactionAction(
       const result = resolveRaid(faction, target, defender, rng, config);
 
       if (result.success) {
-        faction.gold += result.lootGold;
+        // Apply raid loot multiplier for bandits/goblins
+        const am = config.actionMultipliers;
+        const lootMult = faction.type === 'bandit' ? am.bandit.raidLoot
+                       : faction.type === 'goblin' ? am.goblin.raidLoot : 1;
+        const boostedLoot = Math.floor(result.lootGold * lootMult);
+        faction.gold += boostedLoot;
         target.prosperity = clamp(target.prosperity - result.prosperityDamage, 0, 100);
         faction.power = clamp(faction.power - result.raiderLosses, 0, faction.maxPower);
         target.population = Math.max(0, target.population - rng.int(rc.populationDamageRange[0], rc.populationDamageRange[1]));
@@ -168,13 +204,13 @@ function executeFactionAction(
           season: state.season,
           year: state.year,
           type: 'raid',
-          text: `${faction.name} raids ${target.name}! They seize ${result.lootGold} gold and leave destruction in their wake.`,
+          text: `${faction.name} raids ${target.name}! They seize ${boostedLoot} gold and leave destruction in their wake.`,
           icon: '🔥',
           factionId: faction.id,
           locationId: target.id,
           consequences: [
             `${target.name} prosperity -${result.prosperityDamage}`,
-            `${faction.name} gold +${result.lootGold}`,
+            `${faction.name} gold +${boostedLoot}`,
           ],
           hookPotential: target.population > 500 ? 4 : 3,
         });
@@ -209,8 +245,9 @@ function executeFactionAction(
 
     case 'recruit': {
       const recruited = rng.int(rec.recruitRange[0], rec.recruitRange[1]);
+      const recruitCostMult = faction.type === 'bandit' ? config.actionMultipliers.bandit.recruitCost : 1;
       faction.power = clamp(faction.power + recruited, 0, faction.maxPower);
-      faction.gold = Math.max(0, faction.gold - recruited * rec.recruitCost);
+      faction.gold = Math.max(0, faction.gold - Math.floor(recruited * rec.recruitCost * recruitCostMult));
       events.push({
         id: `recruit_${faction.id}_t${state.turn}`,
         turn: state.turn,
@@ -229,7 +266,8 @@ function executeFactionAction(
     case 'fortify': {
       const loc = state.locations[action.locationId];
       if (!loc) break;
-      const amount = rng.int(rec.fortifyRange[0], rec.fortifyRange[1]);
+      const fortifyMult = faction.type === 'noble' ? config.actionMultipliers.noble.fortifyBonus : 1;
+      const amount = Math.floor(rng.int(rec.fortifyRange[0], rec.fortifyRange[1]) * fortifyMult);
       loc.defense = clamp(loc.defense + amount, 0, 100);
       faction.gold = Math.max(0, faction.gold - rec.fortifyCost);
       events.push({
@@ -251,7 +289,9 @@ function executeFactionAction(
     case 'patrol': {
       const loc = state.locations[action.locationId];
       if (!loc) break;
-      loc.defense = clamp(loc.defense + rec.patrolDefenseBoost, 0, 100);
+      const patrolMult = faction.type === 'empire' ? config.actionMultipliers.empire.patrolDefense : 1;
+      const patrolBoost = Math.floor(rec.patrolDefenseBoost * patrolMult);
+      loc.defense = clamp(loc.defense + patrolBoost, 0, 100);
       events.push({
         id: `patrol_${faction.id}_${loc.id}_t${state.turn}`,
         turn: state.turn,
@@ -262,7 +302,7 @@ function executeFactionAction(
         icon: '🛡️',
         factionId: faction.id,
         locationId: loc.id,
-        consequences: [`${loc.name} defense +${rec.patrolDefenseBoost}`],
+        consequences: [`${loc.name} defense +${patrolBoost}`],
         hookPotential: 1,
       });
       break;
@@ -280,7 +320,8 @@ function executeFactionAction(
         loc.prosperity = clamp(loc.prosperity - ec.taxProsperityDamage, 0, 100);
       }
       // Corruption eats some taxes
-      const effective = Math.floor(taxes * (1 - faction.corruption / ec.corruptionTaxDivisor));
+      const taxMult = faction.type === 'empire' ? config.actionMultipliers.empire.taxIncome : 1;
+      const effective = Math.floor(taxes * (1 - faction.corruption / ec.corruptionTaxDivisor) * taxMult);
       faction.gold += effective;
       events.push({
         id: `tax_${faction.id}_t${state.turn}`,
@@ -364,7 +405,8 @@ function executeFactionAction(
       if (!loc) break;
       const investment = Math.min(rec.investmentCap, faction.gold);
       faction.gold -= investment;
-      loc.prosperity = clamp(loc.prosperity + Math.floor(investment / rec.investmentEfficiency), 0, 100);
+      const investMult = faction.type === 'merchant' ? config.actionMultipliers.merchant.investEfficiency : 1;
+      loc.prosperity = clamp(loc.prosperity + Math.floor(investment / rec.investmentEfficiency * investMult), 0, 100);
       events.push({
         id: `invest_${faction.id}_${loc.id}_t${state.turn}`,
         turn: state.turn,
@@ -384,7 +426,8 @@ function executeFactionAction(
     case 'bribe': {
       const target = state.factions[action.targetFactionId];
       if (!target) break;
-      const bribeAmount = Math.min(dc.bribeCost, faction.gold);
+      const bribeMult = faction.type === 'merchant' ? config.actionMultipliers.merchant.bribeCost : 1;
+      const bribeAmount = Math.min(Math.floor(dc.bribeCost * bribeMult), faction.gold);
       faction.gold -= bribeAmount;
       faction.relationships[target.id] = clamp(
         (faction.relationships[target.id] ?? 0) + dc.briberRelationshipGain, -100, 100
@@ -515,7 +558,8 @@ function executeFactionAction(
     case 'trade': {
       const loc = state.locations[action.locationId];
       if (!loc) break;
-      const income = Math.floor(loc.prosperity * rec.tradeIncomeRate) + rng.int(rec.tradeRandomRange[0], rec.tradeRandomRange[1]);
+      const tradeMult = faction.type === 'merchant' ? config.actionMultipliers.merchant.tradeIncome : 1;
+      const income = Math.floor((Math.floor(loc.prosperity * rec.tradeIncomeRate) + rng.int(rec.tradeRandomRange[0], rec.tradeRandomRange[1])) * tradeMult);
       faction.gold += income;
       events.push({
         id: `trade_${faction.id}_t${state.turn}`,
@@ -592,6 +636,8 @@ function describeFactionAction(faction: Faction, action: FactionAction): string 
       return `Traded at ${action.locationId}`;
     case 'lay_low':
       return 'Laid low';
+    case 'propose_treaty':
+      return `Proposed ${action.treatyType.replace(/_/g, ' ')} to ${action.targetFactionId}`;
     default:
       return 'Unknown action';
   }

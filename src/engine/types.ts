@@ -22,11 +22,21 @@ export type LocationType =
   | 'temple'
   | 'mine'
   | 'tower'
-  | 'dungeon';
+  | 'dungeon'
+  | 'catacombs'
+  | 'port'
+  | 'shrine'
+  | 'outpost';
 
 export type Season = 'Spring' | 'Summer' | 'Autumn' | 'Winter';
 
 export const SEASONS: Season[] = ['Spring', 'Summer', 'Autumn', 'Winter'];
+
+export interface FactionPersonality {
+  dealmaking: number;   // 0-1, preference for negotiation over violence
+  aggression: number;   // 0-1, preference for raids/expansion
+  greed: number;        // 0-1, how much they value gold accumulation
+}
 
 export interface Faction {
   id: string;
@@ -46,6 +56,7 @@ export interface Faction {
   goals: string[];
   attitude: string;
   description: string;
+  personality: FactionPersonality;
 
   // Territory
   controlledLocations: string[];
@@ -55,8 +66,35 @@ export interface Faction {
   alliances: string[];
   enemies: string[];
 
+  // Treaties
+  treaties: Treaty[];
+
   // History
   recentActions: string[];
+}
+
+// === Treaty System ===
+
+export type TreatyType =
+  | 'gold_for_peace'       // I pay you X gold/turn, you don't attack me
+  | 'gold_for_protection'  // I pay you X gold/turn, you lend me Y power
+  | 'gold_for_territory'   // I give you X gold, you cede a location
+  | 'mutual_defense'       // both sides defend each other
+  | 'trade_agreement'      // both sides get income bonus
+  | 'tribute';             // weaker pays stronger to avoid war
+
+export interface Treaty {
+  id: string;
+  type: TreatyType;
+  parties: [string, string];     // [proposer, acceptor]
+  terms: {
+    goldPerTurn?: number;
+    lumpSumGold?: number;
+    locationId?: string;
+    powerLent?: number;
+    duration: number;            // turns remaining (-1 = indefinite)
+  };
+  createdTurn: number;
 }
 
 export interface Location {
@@ -100,7 +138,8 @@ export type EventType =
   | 'diplomacy'
   | 'festival'
   | 'famine'
-  | 'weather';
+  | 'weather'
+  | 'treaty';
 
 export interface WorldEvent {
   id: string;
@@ -134,6 +173,7 @@ export interface WorldState {
   season: Season;
   factions: Record<string, Faction>;
   locations: Record<string, Location>;
+  activeTreaties: Treaty[];
   eventLog: WorldEvent[];
   storyBeatsTriggered: string[];
   rngSeed: number;
@@ -153,7 +193,8 @@ export type FactionAction =
   | { type: 'lay_low' }
   | { type: 'reform' }
   | { type: 'trade'; locationId: string }
-  | { type: 'hire_mercenaries' };
+  | { type: 'hire_mercenaries' }
+  | { type: 'propose_treaty'; targetFactionId: string; treatyType: TreatyType; terms: Treaty['terms'] };
 
 export interface CombatResult {
   attackerRoll: number;

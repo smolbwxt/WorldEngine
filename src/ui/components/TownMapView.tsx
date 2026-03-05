@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback, useRef } from 'react';
 import type { Location, WorldState } from '../../engine/types.js';
 import { generateTownMap, type TownMap, type Tile, type TileType, type PointOfInterest } from '../../engine/townmap.js';
 import { generateArtisticLocation, type MapGenResult } from '../../engine/mapImageGen.js';
+import BuildingInteriorView from './BuildingInteriorView.js';
 
 interface Props {
   location: Location;
@@ -68,6 +69,8 @@ export default function TownMapView({ location, worldState }: Props) {
   const [artisticImage, setArtisticImage] = useState<MapGenResult | null>(null);
   const [generating, setGenerating] = useState(false);
   const [genError, setGenError] = useState<string | null>(null);
+  const [selectedPOI, setSelectedPOI] = useState<PointOfInterest | null>(null);
+  const [userDesc, setUserDesc] = useState('');
 
   // Cache artistic images per location
   const cacheRef = useRef<Map<string, MapGenResult>>(new Map());
@@ -86,8 +89,8 @@ export default function TownMapView({ location, worldState }: Props) {
   }, [townMap]);
 
   const handleGenerate = useCallback(async () => {
-    // Check cache
-    const cached = cacheRef.current.get(location.id);
+    const cacheKey = `${location.id}_${userDesc}`;
+    const cached = cacheRef.current.get(cacheKey);
     if (cached) {
       setArtisticImage(cached);
       setViewMode('artistic');
@@ -98,8 +101,8 @@ export default function TownMapView({ location, worldState }: Props) {
     setGenError(null);
 
     try {
-      const result = await generateArtisticLocation(townMap, location, worldState);
-      cacheRef.current.set(location.id, result);
+      const result = await generateArtisticLocation(townMap, location, worldState, userDesc || undefined);
+      cacheRef.current.set(cacheKey, result);
       setArtisticImage(result);
       setViewMode('artistic');
     } catch (err) {
@@ -109,10 +112,37 @@ export default function TownMapView({ location, worldState }: Props) {
     } finally {
       setGenerating(false);
     }
-  }, [location, townMap, worldState]);
+  }, [location, townMap, worldState, userDesc]);
+
+  // If a POI is selected, show its interior
+  if (selectedPOI) {
+    return (
+      <BuildingInteriorView
+        poi={selectedPOI}
+        location={location}
+        worldState={worldState}
+        onClose={() => setSelectedPOI(null)}
+      />
+    );
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {/* Description input */}
+      <div style={{ display: 'flex', gap: 6 }}>
+        <input
+          type="text"
+          placeholder="Add to description (optional)..."
+          value={userDesc}
+          onChange={e => setUserDesc(e.target.value)}
+          style={{
+            flex: 1, padding: '4px 8px', fontSize: '0.75rem',
+            background: 'var(--bg-secondary)', border: '1px solid var(--border-color)',
+            borderRadius: 4, color: 'var(--text-primary)',
+          }}
+        />
+      </div>
+
       {/* Controls */}
       <div className="location-art-controls">
         {artisticImage && (
@@ -177,6 +207,8 @@ export default function TownMapView({ location, worldState }: Props) {
                 return (
                   <g
                     key={`${x}-${y}`}
+                    style={poi ? { cursor: 'pointer' } : undefined}
+                    onClick={() => { if (poi) setSelectedPOI(poi); }}
                     onMouseEnter={(e) => {
                       if (poi) {
                         setHoveredPOI(poi);
@@ -297,14 +329,20 @@ export default function TownMapView({ location, worldState }: Props) {
         {townMap.pointsOfInterest
           .filter(p => p.description)
           .map((poi, i) => (
-          <div key={i} style={{
-            padding: '4px 0',
-            borderBottom: '1px solid rgba(255,255,255,0.05)',
-            color: 'var(--text-secondary)',
-          }}>
+          <div
+            key={i}
+            style={{
+              padding: '4px 0',
+              borderBottom: '1px solid rgba(255,255,255,0.05)',
+              color: 'var(--text-secondary)',
+              cursor: 'pointer',
+            }}
+            onClick={() => setSelectedPOI(poi)}
+          >
             <strong style={{ color: 'var(--text-primary)' }}>{poi.name}</strong>
             {' — '}
             {poi.description}
+            <span style={{ fontSize: '0.65rem', color: 'var(--accent-gold)', marginLeft: 6 }}>Enter →</span>
           </div>
         ))}
       </div>

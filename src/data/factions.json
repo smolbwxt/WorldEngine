@@ -6,13 +6,14 @@
     "power": 60,
     "maxPower": 100,
     "morale": 35,
-    "gold": 200,
+    "gold": 250,
     "corruption": 72,
     "leader": "Emperor Marius IV",
-    "leaderTraits": ["weak-willed", "paranoid", "easily-manipulated"],
+    "leaderTraits": ["weak-willed", "paranoid", "easily-manipulated", "legacy-of-greatness"],
     "goals": ["maintain power", "suppress dissent", "collect taxes"],
     "attitude": "Defensive and suspicious",
     "description": "The once-golden heart of civilization, now hollowed by decades of corrupt stewards. Emperor Marius IV clings to a throne that grows less meaningful each season.",
+    "personality": { "dealmaking": 0.4, "aggression": 0.2, "greed": 0.7 },
     "controlledLocations": ["aurelius", "crosswall", "kingsbridge"],
     "relationships": {
       "house_valdris": 20,
@@ -24,6 +25,7 @@
     },
     "alliances": [],
     "enemies": ["iron_fang", "red_wolves", "greentusk_horde"],
+    "treaties": [],
     "recentActions": []
   },
   {
@@ -33,13 +35,14 @@
     "power": 45,
     "maxPower": 60,
     "morale": 55,
-    "gold": 150,
+    "gold": 180,
     "corruption": 40,
     "leader": "Lord Aldric Valdris",
-    "leaderTraits": ["ambitious", "calculating", "patient"],
+    "leaderTraits": ["ambitious", "calculating", "patient", "treacherous"],
     "goals": ["claim the throne", "expand influence", "weaken rivals"],
     "attitude": "Publicly loyal, privately scheming",
     "description": "Lord Valdris smells blood in the water. His house grows stronger while the empire weakens. Every courtesy hides a calculation.",
+    "personality": { "dealmaking": 0.7, "aggression": 0.4, "greed": 0.8 },
     "controlledLocations": ["valdris_hold", "millhaven"],
     "relationships": {
       "aurelian_crown": 20,
@@ -51,6 +54,7 @@
     },
     "alliances": [],
     "enemies": [],
+    "treaties": [],
     "recentActions": []
   },
   {
@@ -60,13 +64,14 @@
     "power": 35,
     "maxPower": 50,
     "morale": 65,
-    "gold": 80,
+    "gold": 100,
     "corruption": 15,
     "leader": "Lady Elara Thorne",
-    "leaderTraits": ["principled", "brave", "under-resourced"],
+    "leaderTraits": ["principled", "brave", "under-resourced", "inspiring"],
     "goals": ["protect the people", "uphold justice", "survive"],
     "attitude": "Honorable but stretched thin",
     "description": "One of the last truly honorable houses. Lady Thorne genuinely cares about the common folk, but her resources can't match her convictions.",
+    "personality": { "dealmaking": 0.6, "aggression": 0.3, "greed": 0.2 },
     "controlledLocations": ["thornefield", "shepherds_rest"],
     "relationships": {
       "aurelian_crown": 40,
@@ -78,6 +83,7 @@
     },
     "alliances": [],
     "enemies": ["greentusk_horde"],
+    "treaties": [],
     "recentActions": []
   },
   {
@@ -87,13 +93,14 @@
     "power": 25,
     "maxPower": 40,
     "morale": 50,
-    "gold": 40,
+    "gold": 80,
     "corruption": 0,
     "leader": "Scar",
-    "leaderTraits": ["pragmatic", "ambitious", "formerly-a-farmer"],
+    "leaderTraits": ["pragmatic", "ambitious", "formerly-a-farmer", "ruthless"],
     "goals": ["build a domain", "recruit the desperate", "raid the wealthy"],
     "attitude": "Opportunistic and growing bolder",
     "description": "What started as desperate farmers banding together has become something more. Scar wants more than survival — he wants a domain of his own.",
+    "personality": { "dealmaking": 0.3, "aggression": 0.7, "greed": 0.6 },
     "controlledLocations": ["blackhollow"],
     "relationships": {
       "aurelian_crown": -80,
@@ -105,6 +112,7 @@
     },
     "alliances": [],
     "enemies": ["aurelian_crown"],
+    "treaties": [],
     "recentActions": []
   },
   {
@@ -114,13 +122,14 @@
     "power": 15,
     "maxPower": 30,
     "morale": 40,
-    "gold": 20,
+    "gold": 50,
     "corruption": 0,
     "leader": "Maren \"Red\" Ashwick",
-    "leaderTraits": ["desperate", "cunning", "survivalist"],
+    "leaderTraits": ["desperate", "cunning", "survivalist", "loyal-to-her-own"],
     "goals": ["survive winter", "avoid the empire", "prey on the weak"],
     "attitude": "Desperate and opportunistic",
     "description": "A smaller, more desperate band. They prey on the undefended and flee from real opposition. Maren keeps them alive through cunning alone.",
+    "personality": { "dealmaking": 0.5, "aggression": 0.5, "greed": 0.4 },
     "controlledLocations": [],
     "relationships": {
       "aurelian_crown": -70,
@@ -132,6 +141,7 @@
     },
     "alliances": [],
     "enemies": ["aurelian_crown"],
+    "treaties": [],
     "recentActions": []
   },
   {
@@ -141,13 +151,14 @@
     "power": 30,
     "maxPower": 50,
     "morale": 45,
-    "gold": 10,
+    "gold": 40,
     "corruption": 0,
     "leader": "Warchief Grak",
-    "leaderTraits": ["brutal", "charismatic", "surprisingly-strategic"],
+    "leaderTraits": ["brutal", "charismatic", "surprisingly-strategic", "wrathful"],
     "goals": ["unite goblin tribes", "claim surface territory", "prove goblin strength"],
     "attitude": "Aggressive and emboldened",
     "description": "Warchief Grak has done what no goblin has in generations — united the tribes. They sense the empire's weakness and push further into civilized lands than ever before.",
+    "personality": { "dealmaking": 0.1, "aggression": 0.9, "greed": 0.5 },
     "controlledLocations": ["greentusk_caves", "ashwood"],
     "relationships": {
       "aurelian_crown": -90,
@@ -159,6 +170,7 @@
     },
     "alliances": [],
     "enemies": ["aurelian_crown", "house_thorne"],
+    "treaties": [],
     "recentActions": []
   },
   {
@@ -168,13 +180,14 @@
     "power": 10,
     "maxPower": 15,
     "morale": 30,
-    "gold": 300,
+    "gold": 350,
     "corruption": 55,
     "leader": "Guildmaster Sera Blackwood",
-    "leaderTraits": ["pragmatic", "wealthy", "amoral"],
+    "leaderTraits": ["pragmatic", "wealthy", "amoral", "well-connected"],
     "goals": ["keep trade routes safe", "maximize profit", "buy influence"],
     "attitude": "Loyalty goes to the highest bidder",
     "description": "The Guild doesn't care who rules, only that caravans move safely. Sera Blackwood will fund mercenaries, bribe officials, or back coups — whatever keeps the gold flowing.",
+    "personality": { "dealmaking": 0.9, "aggression": 0.1, "greed": 0.9 },
     "controlledLocations": ["marketcross"],
     "relationships": {
       "aurelian_crown": 30,
@@ -186,6 +199,7 @@
     },
     "alliances": [],
     "enemies": [],
+    "treaties": [],
     "recentActions": []
   }
 ]
