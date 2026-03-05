@@ -202,17 +202,34 @@ export interface MapGenResult {
   prompt: string;
 }
 
-/** Extract base64 data and mime type from an HTMLImageElement's data URL src */
-function extractImageData(img: HTMLImageElement): { base64: string; mimeType: string } {
+/** Ensure an HTMLImageElement is fully loaded before we read from it */
+function waitForImageLoad(img: HTMLImageElement): Promise<HTMLImageElement> {
+  if (img.complete && img.naturalWidth > 0) return Promise.resolve(img);
+  return new Promise((resolve, reject) => {
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('Image failed to load'));
+  });
+}
+
+/** Extract base64 data and mime type from an HTMLImageElement */
+async function extractImageData(img: HTMLImageElement): Promise<{ base64: string; mimeType: string }> {
   const src = img.src;
-  const match = src.match(/^data:(image\/[^;]+);base64,(.+)$/);
-  if (match) {
-    return { mimeType: match[1], base64: match[2] };
+
+  // Fast path: already a data URL
+  const dataMatch = src.match(/^data:(image\/[^;]+);base64,(.+)$/);
+  if (dataMatch) {
+    return { mimeType: dataMatch[1], base64: dataMatch[2] };
   }
-  // Fallback: draw to canvas to extract base64
+
+  // For blob/remote URLs: wait for load, then draw to canvas
+  await waitForImageLoad(img);
+
   const canvas = document.createElement('canvas');
-  canvas.width = img.naturalWidth || img.width || 512;
-  canvas.height = img.naturalHeight || img.height || 512;
+  canvas.width = img.naturalWidth || img.width;
+  canvas.height = img.naturalHeight || img.height;
+  if (canvas.width === 0 || canvas.height === 0) {
+    throw new Error('Image has zero dimensions — generation may have failed');
+  }
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('Canvas context unavailable');
   ctx.drawImage(img, 0, 0);
@@ -239,7 +256,7 @@ export async function generateArtisticMap(
     input_image_mime_type: 'image/jpeg',
   });
 
-  const { base64, mimeType } = extractImageData(img);
+  const { base64, mimeType } = await extractImageData(img);
   return { imageBase64: base64, mimeType, prompt };
 }
 
@@ -439,7 +456,7 @@ export async function generateArtisticLocation(
     input_image_mime_type: 'image/jpeg',
   });
 
-  const { base64, mimeType } = extractImageData(img);
+  const { base64, mimeType } = await extractImageData(img);
   return { imageBase64: base64, mimeType, prompt };
 }
 
@@ -454,6 +471,6 @@ export async function generateLocationScene(
     model: PUTER_MODEL,
   });
 
-  const { base64, mimeType } = extractImageData(img);
+  const { base64, mimeType } = await extractImageData(img);
   return { imageBase64: base64, mimeType, prompt };
 }
