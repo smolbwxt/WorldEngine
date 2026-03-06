@@ -16,6 +16,7 @@ import {
   getFactionMoraleBonus,
   rollCharacterProgression,
 } from './characters.js';
+import { generateNarrativeRecap } from './narrative.js';
 import type { SimulationConfig } from './config.js';
 import { DEFAULT_CONFIG } from './config.js';
 
@@ -130,6 +131,9 @@ export function resolveTurn(state: WorldState, config: SimulationConfig = DEFAUL
   // Generate DM brief
   const dmBrief = generateDMBrief(state, events);
 
+  // Generate narrative flavor text
+  const narrative = generateNarrativeRecap(state, events, rng);
+
   return {
     turn: state.turn,
     season: state.season,
@@ -139,6 +143,7 @@ export function resolveTurn(state: WorldState, config: SimulationConfig = DEFAUL
     locationChanges,
     storyHooks,
     dmBrief,
+    narrative,
   };
 }
 

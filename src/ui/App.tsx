@@ -9,8 +9,9 @@ import Dashboard from './components/Dashboard.js';
 import TurnControls from './components/TurnControls.js';
 import LocationDetail from './components/LocationDetail.js';
 import CharacterPanel from './components/CharacterPanel.js';
+import RelationshipMatrix from './components/RelationshipMatrix.js';
 
-type MainView = 'map' | 'dashboard';
+type MainView = 'map' | 'dashboard' | 'diplomacy';
 type SideView = 'factions' | 'chronicle' | 'location' | 'characters';
 
 export default function App() {
@@ -82,16 +83,29 @@ export default function App() {
           >
             Dashboard
           </button>
+          <button
+            className={mainView === 'diplomacy' ? 'active' : ''}
+            onClick={() => setMainView('diplomacy')}
+          >
+            Diplomacy
+          </button>
         </div>
 
-        {mainView === 'map' ? (
+        {mainView === 'map' && (
           <WorldMap
             worldState={worldState}
             selectedFaction={selectedFaction}
             onLocationSelect={handleLocationSelect}
           />
-        ) : (
+        )}
+        {mainView === 'dashboard' && (
           <Dashboard worldState={worldState} turnResults={turnResults} />
+        )}
+        {mainView === 'diplomacy' && (
+          <RelationshipMatrix
+            worldState={worldState}
+            onFactionSelect={handleFactionSelect}
+          />
         )}
       </div>
 

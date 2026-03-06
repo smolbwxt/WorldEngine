@@ -165,6 +165,7 @@ export interface TurnResult {
   locationChanges: Record<string, Partial<Location>>;
   storyHooks: string[];
   dmBrief: string;
+  narrative: string;  // procedural flavor text recap of the turn
 }
 
 export interface WorldState {
