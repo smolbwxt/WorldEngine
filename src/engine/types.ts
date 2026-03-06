@@ -22,11 +22,21 @@ export type LocationType =
   | 'temple'
   | 'mine'
   | 'tower'
-  | 'dungeon';
+  | 'dungeon'
+  | 'catacombs'
+  | 'port'
+  | 'shrine'
+  | 'outpost';
 
 export type Season = 'Spring' | 'Summer' | 'Autumn' | 'Winter';
 
 export const SEASONS: Season[] = ['Spring', 'Summer', 'Autumn', 'Winter'];
+
+export interface FactionPersonality {
+  dealmaking: number;   // 0-1, preference for negotiation over violence
+  aggression: number;   // 0-1, preference for raids/expansion
+  greed: number;        // 0-1, how much they value gold accumulation
+}
 
 export interface Faction {
   id: string;
@@ -46,6 +56,7 @@ export interface Faction {
   goals: string[];
   attitude: string;
   description: string;
+  personality: FactionPersonality;
 
   // Territory
   controlledLocations: string[];
@@ -55,8 +66,35 @@ export interface Faction {
   alliances: string[];
   enemies: string[];
 
+  // Treaties
+  treaties: Treaty[];
+
   // History
   recentActions: string[];
+}
+
+// === Treaty System ===
+
+export type TreatyType =
+  | 'gold_for_peace'       // I pay you X gold/turn, you don't attack me
+  | 'gold_for_protection'  // I pay you X gold/turn, you lend me Y power
+  | 'gold_for_territory'   // I give you X gold, you cede a location
+  | 'mutual_defense'       // both sides defend each other
+  | 'trade_agreement'      // both sides get income bonus
+  | 'tribute';             // weaker pays stronger to avoid war
+
+export interface Treaty {
+  id: string;
+  type: TreatyType;
+  parties: [string, string];     // [proposer, acceptor]
+  terms: {
+    goldPerTurn?: number;
+    lumpSumGold?: number;
+    locationId?: string;
+    powerLent?: number;
+    duration: number;            // turns remaining (-1 = indefinite)
+  };
+  createdTurn: number;
 }
 
 export interface Location {
@@ -100,7 +138,8 @@ export type EventType =
   | 'diplomacy'
   | 'festival'
   | 'famine'
-  | 'weather';
+  | 'weather'
+  | 'treaty';
 
 export interface WorldEvent {
   id: string;
@@ -126,6 +165,7 @@ export interface TurnResult {
   locationChanges: Record<string, Partial<Location>>;
   storyHooks: string[];
   dmBrief: string;
+  narrative: string;  // procedural flavor text recap of the turn
 }
 
 export interface WorldState {
@@ -134,6 +174,8 @@ export interface WorldState {
   season: Season;
   factions: Record<string, Faction>;
   locations: Record<string, Location>;
+  characters: Record<string, Character>;
+  activeTreaties: Treaty[];
   eventLog: WorldEvent[];
   storyBeatsTriggered: string[];
   rngSeed: number;
@@ -153,7 +195,106 @@ export type FactionAction =
   | { type: 'lay_low' }
   | { type: 'reform' }
   | { type: 'trade'; locationId: string }
-  | { type: 'hire_mercenaries' };
+  | { type: 'hire_mercenaries' }
+  | { type: 'propose_treaty'; targetFactionId: string; treatyType: TreatyType; terms: Treaty['terms'] };
+
+// === Character / NPC System ===
+
+export type CharacterRole =
+  | 'commander'     // military leader — combat bonuses
+  | 'spymaster'     // intelligence — sabotage, scouting
+  | 'diplomat'      // negotiation — treaty bonuses
+  | 'champion'      // personal combatant — duels, morale
+  | 'advisor'       // governance — economy, corruption
+  | 'warchief';     // goblin/bandit leader — raid bonuses
+
+export type CharacterStatus = 'active' | 'wounded' | 'captured' | 'dead';
+
+export interface CharacterAbility {
+  id: string;
+  name: string;
+  description: string;
+  passive: boolean;      // always active vs triggered
+  combatBonus?: number;  // added to rolls when present
+  moraleBonus?: number;  // morale boost to faction
+  economyBonus?: number; // gold income multiplier
+  gainedTurn?: number;   // turn when this ability was earned (undefined = starting ability)
+}
+
+export interface CharacterVendetta {
+  targetCharId: string;   // the character they want dead
+  reason: string;         // e.g. "killed Ser Roland at Thornefield"
+  createdTurn: number;
+}
+
+export interface CharacterTrophy {
+  name: string;           // e.g. "Grak's Skull"
+  fromCharId: string;     // the dead character this came from
+  fromCharName: string;
+  gainedTurn: number;
+  combatBonus: number;    // typically 1
+}
+
+export type RelationshipType =
+  | 'mentor'       // older character teaches younger
+  | 'protege'      // younger character learns from older
+  | 'rival'        // intra-faction rivalry
+  | 'blood_oath'   // cross-faction sworn bond
+  | 'nemesis';     // sworn enemy (personal, not faction)
+
+export interface CharacterRelationship {
+  targetCharId: string;
+  type: RelationshipType;
+  createdTurn: number;
+  description: string;
+}
+
+export interface Character {
+  id: string;
+  name: string;
+  title: string;
+  role: CharacterRole;
+  factionId: string;
+  locationId: string;     // current location
+
+  // Core stats (1-10 scale, like ability scores)
+  prowess: number;        // martial skill — combat rolls
+  cunning: number;        // subterfuge — raids, schemes, survival
+  authority: number;      // leadership — morale, diplomacy, governance
+
+  // State
+  status: CharacterStatus;
+  renown: number;         // 0-100, grows with victories
+  loyalty: number;        // 0-100, to their faction
+  woundedUntilTurn: number; // turn when wounds heal (0 = not wounded)
+  activeSince: number;    // turn when character entered play (0 = start)
+
+  // Identity
+  description: string;
+  traits: string[];
+  abilities: CharacterAbility[];
+
+  // History
+  killCount: number;
+  battlesWon: number;
+  battlesLost: number;
+  timesWounded: number;
+  deathTurn?: number;
+  deathCause?: string;
+  titleHistory: string[]; // previous titles, most recent first
+
+  // Rivalries, trophies, relationships
+  vendettas: CharacterVendetta[];
+  trophies: CharacterTrophy[];
+  relationships: CharacterRelationship[];
+
+  // Last stand result (set on death in battle)
+  lastStand?: {
+    extraCasualties: number;
+    flippedBattle: boolean;
+    narrative: string;
+  };
+}
 
 export interface CombatResult {
   attackerRoll: number;
@@ -163,6 +304,9 @@ export interface CombatResult {
   attackerLosses: number;
   defenderLosses: number;
   territoryChanged: boolean;
+  // Character combat results
+  attackerCharacter?: { id: string; name: string; bonus: number; survived: boolean; deathNarrative?: string };
+  defenderCharacter?: { id: string; name: string; bonus: number; survived: boolean; deathNarrative?: string };
 }
 
 export interface EventTemplate {

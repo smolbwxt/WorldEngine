@@ -1,28 +1,37 @@
-import type { Faction, Location, CombatResult } from './types.js';
+import type { Faction, Location, Character, CombatResult } from './types.js';
 import type { SeededRNG } from './rng.js';
 import type { SimulationConfig } from './config.js';
+import { getCharacterCombatBonus } from './characters.js';
 
 export function resolveCombat(
   attacker: Faction,
   defender: Faction,
   targetLocation: Location | null,
   rng: SeededRNG,
-  config: SimulationConfig
+  config: SimulationConfig,
+  attackerChar?: Character | null,
+  defenderChar?: Character | null,
 ): CombatResult {
   const cc = config.combat;
   const moraleBonus = (f: Faction) =>
     f.morale > cc.highMoraleThreshold ? cc.moraleModifier :
     f.morale < cc.lowMoraleThreshold ? -cc.moraleModifier : 0;
 
+  // Character combat bonuses (including vendetta/trophy/relationship bonuses)
+  const attackerCharBonus = attackerChar ? getCharacterCombatBonus(attackerChar, defenderChar) : 0;
+  const defenderCharBonus = defenderChar ? getCharacterCombatBonus(defenderChar, attackerChar) : 0;
+
   const attackerRoll =
     rng.d20() +
     Math.floor(attacker.power / cc.powerRollDivisor) +
-    moraleBonus(attacker);
+    moraleBonus(attacker) +
+    attackerCharBonus;
 
   let defenderRoll =
     rng.d20() +
     Math.floor(defender.power / cc.powerRollDivisor) +
-    moraleBonus(defender);
+    moraleBonus(defender) +
+    defenderCharBonus;
 
   // Location bonuses for defender
   if (targetLocation) {
@@ -74,6 +83,14 @@ export function resolveCombat(
     attackerLosses,
     defenderLosses,
     territoryChanged,
+    attackerCharacter: attackerChar ? {
+      id: attackerChar.id, name: attackerChar.name,
+      bonus: attackerCharBonus, survived: true,
+    } : undefined,
+    defenderCharacter: defenderChar ? {
+      id: defenderChar.id, name: defenderChar.name,
+      bonus: defenderCharBonus, survived: true,
+    } : undefined,
   };
 }
 

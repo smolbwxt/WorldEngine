@@ -146,6 +146,44 @@ export interface DiplomacyConfig {
   schemeCorruptionRange: [number, number];
   /** Gold cost of scheming (default 15) */
   schemeCost: number;
+
+  // Treaty system
+  /** Relationship penalty for breaking a treaty */
+  treatyBreakPenalty: number;
+  /** Morale hit for breaking a treaty */
+  treatyBreakMoraleCost: number;
+  /** Base chance of accepting a treaty proposal (modified by personality) */
+  treatyBaseAcceptChance: number;
+  /** Minimum relationship to propose a treaty */
+  treatyMinRelationship: number;
+}
+
+/** Per-location-type income multipliers */
+export interface LocationBonusConfig {
+  capital: number;
+  fortress: number;
+  castle: number;
+  town: number;
+  village: number;
+  ruins: number;
+  lair: number;
+  temple: number;
+  mine: number;
+  tower: number;
+  dungeon: number;
+  catacombs: number;
+  port: number;
+  shrine: number;
+  outpost: number;
+}
+
+/** Action effectiveness multipliers per faction type */
+export interface ActionMultiplierConfig {
+  empire: { taxIncome: number; patrolDefense: number; recruitEfficiency: number };
+  noble: { schemeEffect: number; allianceChance: number; fortifyBonus: number };
+  bandit: { raidLoot: number; recruitCost: number; expansionBonus: number };
+  goblin: { raidLoot: number; expansionBonus: number; recruitEfficiency: number };
+  merchant: { tradeIncome: number; bribeCost: number; investEfficiency: number };
 }
 
 export interface RecruitmentConfig {
@@ -230,18 +268,20 @@ export interface SimulationConfig {
   recruitment: RecruitmentConfig;
   factionAI: FactionAIConfig;
   events: EventsConfig;
+  locationBonuses: LocationBonusConfig;
+  actionMultipliers: ActionMultiplierConfig;
 }
 
-/** Default configuration matching current hardcoded values */
+/** Default configuration — rebalanced for healthier economy */
 export const DEFAULT_CONFIG: SimulationConfig = {
   economy: {
-    baseIncomeRate: 0.3,
-    tradeRouteBonus: 0.05,
-    tradeProsperityThreshold: 20,
+    baseIncomeRate: 0.8,
+    tradeRouteBonus: 0.15,
+    tradeProsperityThreshold: 15,
     empireTaxBonus: 0.5,
     merchantTradeMultiplier: 1.5,
-    armyUpkeepRate: 0.5,
-    territoryUpkeepCost: 3,
+    armyUpkeepRate: 0.25,
+    territoryUpkeepCost: 2,
     bankruptcyMoraleHit: 5,
     bankruptcyPowerHit: 2,
     prosperityRecoveryChance: 0.3,
@@ -297,7 +337,7 @@ export const DEFAULT_CONFIG: SimulationConfig = {
     corruptionTickRange: [1, 3],
     corruptionPowerDivisor: 25,
     powerErosionChance: 0.5,
-    treasuryDrainDivisor: 500,
+    treasuryDrainDivisor: 1000,
     moraleDecayCorruptionThreshold: 60,
     moraleDecayChance: 0.3,
     moraleDecayAmount: 2,
@@ -316,6 +356,10 @@ export const DEFAULT_CONFIG: SimulationConfig = {
     bribeTargetRelationshipGain: 5,
     schemeCorruptionRange: [1, 3],
     schemeCost: 15,
+    treatyBreakPenalty: -40,
+    treatyBreakMoraleCost: 10,
+    treatyBaseAcceptChance: 0.4,
+    treatyMinRelationship: -20,
   },
 
   recruitment: {
@@ -373,6 +417,32 @@ export const DEFAULT_CONFIG: SimulationConfig = {
     maxEventsPerTurn: 2,
     refugeeRange: [10, 30],
     refugeeProsperityCost: 1,
+  },
+
+  locationBonuses: {
+    capital: 2.0,
+    fortress: 0.5,
+    castle: 1.2,
+    town: 1.0,
+    village: 0.7,
+    ruins: 0.1,
+    lair: 0.2,
+    temple: 0.8,
+    mine: 2.5,
+    tower: 0.2,
+    dungeon: 0.0,
+    catacombs: 0.0,
+    port: 1.8,
+    shrine: 0.5,
+    outpost: 0.3,
+  },
+
+  actionMultipliers: {
+    empire: { taxIncome: 1.5, patrolDefense: 2.0, recruitEfficiency: 1.0 },
+    noble: { schemeEffect: 1.5, allianceChance: 1.5, fortifyBonus: 1.3 },
+    bandit: { raidLoot: 1.5, recruitCost: 0.5, expansionBonus: 1.2 },
+    goblin: { raidLoot: 1.3, expansionBonus: 1.4, recruitEfficiency: 1.2 },
+    merchant: { tradeIncome: 2.0, bribeCost: 0.7, investEfficiency: 1.5 },
   },
 };
 

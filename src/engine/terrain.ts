@@ -59,10 +59,10 @@ export const TERRAIN_COLORS: Record<TerrainType, string> = {
   river:        '#1a3555',
 };
 
-// Grid resolution: 2 SVG units per cell → 50×50 grid for 100×100 map
+// Grid resolution: 2 SVG units per cell → 80×80 grid for 160×160 map
 const CELL_SIZE = 2;
-const GRID_W = 50;
-const GRID_H = 50;
+const GRID_W = 80;
+const GRID_H = 80;
 
 // === Value Noise ===
 
@@ -119,17 +119,18 @@ interface Grain {
 function scatterRice(rng: SeededRNG, locations: Location[]): Grain[] {
   const grains: Grain[] = [];
 
-  // Phase 1: scatter ~180 random grains, biased toward center
-  for (let i = 0; i < 180; i++) {
+  // Phase 1: scatter ~350 random grains, biased toward center
+  const mapSize = GRID_W * CELL_SIZE;
+  for (let i = 0; i < 350; i++) {
     // Bias toward center of map for a single continent feel
-    let x = rng.next() * 100;
-    let y = rng.next() * 100;
+    let x = rng.next() * mapSize;
+    let y = rng.next() * mapSize;
     // Pull toward center
-    x = x * 0.7 + 15;
-    y = y * 0.7 + 15;
+    x = x * 0.7 + mapSize * 0.15;
+    y = y * 0.7 + mapSize * 0.15;
     // Slight random perturbation
-    x += (rng.next() - 0.5) * 20;
-    y += (rng.next() - 0.5) * 20;
+    x += (rng.next() - 0.5) * mapSize * 0.2;
+    y += (rng.next() - 0.5) * mapSize * 0.2;
     grains.push({ x, y, weight: 0.5 + rng.next() * 0.5 });
   }
 

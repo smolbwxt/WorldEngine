@@ -28,14 +28,28 @@ export default function TurnControls({
       </button>
 
       {latestResult && (
-        <span style={{ marginLeft: 'auto', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-          {latestResult.events.length} events this turn
-          {latestResult.storyHooks.length > 0 && (
-            <span style={{ color: 'var(--accent-gold)', marginLeft: 8 }}>
-              {latestResult.storyHooks.length} story hook{latestResult.storyHooks.length !== 1 ? 's' : ''}!
-            </span>
+        <div style={{ marginLeft: 'auto', fontSize: '0.8rem', color: 'var(--text-muted)', textAlign: 'right', maxWidth: '60%' }}>
+          <div>
+            {latestResult.events.length} events this turn
+            {latestResult.storyHooks.length > 0 && (
+              <span style={{ color: 'var(--accent-gold)', marginLeft: 8 }}>
+                {latestResult.storyHooks.length} story hook{latestResult.storyHooks.length !== 1 ? 's' : ''}!
+              </span>
+            )}
+          </div>
+          {latestResult.narrative && (
+            <p style={{
+              fontSize: '0.7rem',
+              fontStyle: 'italic',
+              margin: '4px 0 0',
+              lineHeight: 1.4,
+              color: 'var(--text-muted)',
+              opacity: 0.85,
+            }}>
+              {latestResult.narrative}
+            </p>
           )}
-        </span>
+        </div>
       )}
     </div>
   );

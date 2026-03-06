@@ -8,9 +8,11 @@ import Chronicle from './components/Chronicle.js';
 import Dashboard from './components/Dashboard.js';
 import TurnControls from './components/TurnControls.js';
 import LocationDetail from './components/LocationDetail.js';
+import CharacterPanel from './components/CharacterPanel.js';
+import RelationshipMatrix from './components/RelationshipMatrix.js';
 
-type MainView = 'map' | 'dashboard';
-type SideView = 'factions' | 'chronicle' | 'location';
+type MainView = 'map' | 'dashboard' | 'diplomacy';
+type SideView = 'factions' | 'chronicle' | 'location' | 'characters';
 
 export default function App() {
   const [worldState, setWorldState] = useState<WorldState>(() => createInitialWorldState(42));
@@ -81,16 +83,29 @@ export default function App() {
           >
             Dashboard
           </button>
+          <button
+            className={mainView === 'diplomacy' ? 'active' : ''}
+            onClick={() => setMainView('diplomacy')}
+          >
+            Diplomacy
+          </button>
         </div>
 
-        {mainView === 'map' ? (
+        {mainView === 'map' && (
           <WorldMap
             worldState={worldState}
             selectedFaction={selectedFaction}
             onLocationSelect={handleLocationSelect}
           />
-        ) : (
+        )}
+        {mainView === 'dashboard' && (
           <Dashboard worldState={worldState} turnResults={turnResults} />
+        )}
+        {mainView === 'diplomacy' && (
+          <RelationshipMatrix
+            worldState={worldState}
+            onFactionSelect={handleFactionSelect}
+          />
         )}
       </div>
 
@@ -109,6 +124,12 @@ export default function App() {
             Chronicle
           </button>
           <button
+            className={sideView === 'characters' ? 'active' : ''}
+            onClick={() => setSideView('characters')}
+          >
+            Characters
+          </button>
+          <button
             className={sideView === 'location' ? 'active' : ''}
             onClick={() => setSideView('location')}
           >
@@ -121,6 +142,12 @@ export default function App() {
             factions={Object.values(worldState.factions)}
             selected={selectedFaction}
             onSelect={handleFactionSelect}
+          />
+        )}
+        {sideView === 'characters' && (
+          <CharacterPanel
+            worldState={worldState}
+            selectedFactionId={selectedFaction?.id}
           />
         )}
         {sideView === 'chronicle' && (
