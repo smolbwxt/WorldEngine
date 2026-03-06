@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import type { WorldState, TurnResult, Faction, Location } from '../engine/types.js';
 import { createInitialWorldState } from '../engine/world-state.js';
 import { resolveTurn } from '../engine/simulation.js';
@@ -10,17 +10,34 @@ import TurnControls from './components/TurnControls.js';
 import LocationDetail from './components/LocationDetail.js';
 import CharacterPanel from './components/CharacterPanel.js';
 import RelationshipMatrix from './components/RelationshipMatrix.js';
+import SaveManager, { autoSave, loadAutoSave, hasAutoSave, clearAutoSave } from './components/SaveManager.js';
 
 type MainView = 'map' | 'dashboard' | 'diplomacy';
 type SideView = 'factions' | 'chronicle' | 'location' | 'characters';
 
 export default function App() {
-  const [worldState, setWorldState] = useState<WorldState>(() => createInitialWorldState(42));
-  const [turnResults, setTurnResults] = useState<TurnResult[]>([]);
+  const [worldState, setWorldState] = useState<WorldState>(() => {
+    // Try to resume from auto-save
+    const saved = loadAutoSave();
+    return saved ? saved.worldState : createInitialWorldState(42);
+  });
+  const [turnResults, setTurnResults] = useState<TurnResult[]>(() => {
+    const saved = loadAutoSave();
+    return saved ? saved.turnResults : [];
+  });
   const [mainView, setMainView] = useState<MainView>('map');
   const [sideView, setSideView] = useState<SideView>('factions');
   const [selectedFaction, setSelectedFaction] = useState<Faction | null>(null);
   const [selectedLocation, setSelectedLocation] = useState<Location | null>(null);
+  const [showSaveManager, setShowSaveManager] = useState(false);
+  const [resumeBanner, setResumeBanner] = useState(() => hasAutoSave());
+
+  // Auto-save after every state change (debounced via effect)
+  useEffect(() => {
+    if (worldState.turn > 0) {
+      autoSave(worldState, turnResults);
+    }
+  }, [worldState, turnResults]);
 
   const advanceTurn = useCallback(() => {
     setWorldState(prev => {
@@ -29,6 +46,7 @@ export default function App() {
       setTurnResults(prevResults => [...prevResults, result]);
       return state;
     });
+    setResumeBanner(false);
   }, []);
 
   const advanceYear = useCallback(() => {
@@ -41,6 +59,7 @@ export default function App() {
       setTurnResults(prevResults => [...prevResults, ...newResults]);
       return state;
     });
+    setResumeBanner(false);
   }, []);
 
   const resetWorld = useCallback(() => {
@@ -48,6 +67,17 @@ export default function App() {
     setTurnResults([]);
     setSelectedFaction(null);
     setSelectedLocation(null);
+    clearAutoSave();
+    setResumeBanner(false);
+  }, []);
+
+  const handleLoadState = useCallback((ws: WorldState, tr: TurnResult[]) => {
+    setWorldState(ws);
+    setTurnResults(tr);
+    setSelectedFaction(null);
+    setSelectedLocation(null);
+    setShowSaveManager(false);
+    setResumeBanner(false);
   }, []);
 
   const handleLocationSelect = useCallback((loc: Location) => {
@@ -64,10 +94,36 @@ export default function App() {
     <div className="app">
       <header className="app-header">
         <h1>The Aurelian Decline</h1>
-        <span className="turn-info">
-          {worldState.season}, Year {worldState.year} — Turn {worldState.turn}
-        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <button
+            onClick={() => setShowSaveManager(true)}
+            style={{
+              fontSize: '0.75rem', padding: '4px 12px',
+              background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)',
+              borderRadius: 4, color: 'var(--text-primary, #eee)', cursor: 'pointer',
+            }}
+          >
+            Save / Load
+          </button>
+          <span className="turn-info">
+            {worldState.season}, Year {worldState.year} — Turn {worldState.turn}
+          </span>
+        </div>
       </header>
+
+      {/* Resume banner */}
+      {resumeBanner && worldState.turn > 0 && (
+        <div style={{
+          background: 'rgba(204,153,0,0.12)', borderBottom: '1px solid rgba(204,153,0,0.3)',
+          padding: '6px 16px', fontSize: '0.75rem', color: '#c90',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        }}>
+          <span>Resumed from auto-save: {worldState.season}, Year {worldState.year}, Turn {worldState.turn}</span>
+          <button onClick={() => setResumeBanner(false)} style={{
+            background: 'none', border: 'none', color: '#c90', cursor: 'pointer', fontSize: '0.75rem',
+          }}>dismiss</button>
+        </div>
+      )}
 
       <div className="main-area">
         <div className="tab-bar">
@@ -168,6 +224,15 @@ export default function App() {
         currentTurn={worldState.turn}
         latestResult={turnResults[turnResults.length - 1] ?? null}
       />
+
+      {showSaveManager && (
+        <SaveManager
+          worldState={worldState}
+          turnResults={turnResults}
+          onLoad={handleLoadState}
+          onClose={() => setShowSaveManager(false)}
+        />
+      )}
     </div>
   );
 }
