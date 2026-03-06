@@ -77,29 +77,36 @@ export function rollCharacterSurvival(
   combatOutcome: CombatResult['outcome'],
   wasAttacking: boolean,
   rng: SeededRNG,
-): { survived: boolean; narrative: string } {
-  // Base death chance by outcome severity
+): { survived: boolean; wounded: boolean; narrative: string } {
+  // Base death chance by outcome severity — significantly higher than before.
+  // A character present at a battle is IN the battle. People die in battles.
   const deathChance: Record<string, number> = {
-    decisive_victory: wasAttacking ? 0.02 : 0.15,  // winners rarely die, losers often
-    victory: wasAttacking ? 0.03 : 0.10,
-    pyrrhic_victory: 0.08,                          // pyrrhic = bloody for everyone
-    repelled: wasAttacking ? 0.10 : 0.03,
-    routed: wasAttacking ? 0.18 : 0.02,
+    decisive_victory: wasAttacking ? 0.05 : 0.25,  // losers of a rout die often
+    victory: wasAttacking ? 0.08 : 0.18,
+    pyrrhic_victory: 0.15,                          // pyrrhic = bloody for everyone
+    repelled: wasAttacking ? 0.18 : 0.06,
+    routed: wasAttacking ? 0.28 : 0.04,
   };
 
-  let chance = deathChance[combatOutcome] ?? 0.05;
+  let chance = deathChance[combatOutcome] ?? 0.10;
 
-  // Cunning reduces death chance (skilled survivors)
-  chance *= Math.max(0.3, 1 - char.cunning * 0.07);
+  // Cunning reduces death chance, but capped — you can't outsmart an arrow
+  chance *= Math.max(0.5, 1 - char.cunning * 0.05);
 
   // Champions die more often (they're in the thick of it)
-  if (char.role === 'champion') chance *= 1.4;
+  if (char.role === 'champion') chance *= 1.5;
+
+  // Warchiefs/commanders are exposed too — leading from the front
+  if (char.role === 'warchief') chance *= 1.2;
 
   // Advisors/diplomats rarely die (they're not on the front line)
   if (char.role === 'advisor' || char.role === 'diplomat') chance *= 0.3;
 
-  // Wounded characters are more vulnerable
-  if (char.status === 'wounded') chance *= 1.8;
+  // Wounded characters are much more vulnerable
+  if (char.status === 'wounded') chance *= 2.0;
+
+  // High renown = bigger target. Fame attracts assassins and challengers.
+  if (char.renown >= 70) chance *= 1.15;
 
   const survived = !rng.chance(chance);
 
@@ -110,31 +117,198 @@ export function rollCharacterSurvival(
       `A stray arrow found ${char.name}. They died before anyone could reach them.`,
       `${char.name} fought to the last, surrounded and overwhelmed.`,
       `${char.name} was killed leading a desperate charge.`,
+      `${char.name} was pulled from the saddle and never stood again.`,
+      `The enemy broke through to ${char.name}'s position. It was over quickly.`,
     ];
-    return { survived: false, narrative: rng.pick(deathNarratives) };
+    return { survived: false, wounded: false, narrative: rng.pick(deathNarratives) };
   }
 
-  // Wound chance (if survived, might still get wounded)
-  const woundChance = chance * 2.5; // wounds are more common than deaths
+  // Wound chance — much more common than death. Wounds pile up and eventually kill.
+  const woundChance = chance * 3.0;
   if (rng.chance(woundChance) && char.status === 'active') {
     return {
       survived: true,
+      wounded: true,
       narrative: `${char.name} was wounded in the fighting and will need time to recover.`,
     };
   }
 
-  return { survived: true, narrative: '' };
+  return { survived: true, wounded: false, narrative: '' };
+}
+
+/**
+ * Roll survival for a character during a raid (lighter than battle, but still risky).
+ */
+export function rollCharacterRaidSurvival(
+  char: Character,
+  raidSucceeded: boolean,
+  wasRaider: boolean,
+  rng: SeededRNG,
+): { survived: boolean; wounded: boolean; narrative: string } {
+  // Raids are less deadly than pitched battles, but characters can still die
+  let chance: number;
+
+  if (wasRaider) {
+    chance = raidSucceeded ? 0.04 : 0.12; // failed raids are dangerous for raiders
+  } else {
+    chance = raidSucceeded ? 0.10 : 0.03; // defenders die when overrun
+  }
+
+  // Cunning helps more in raids (ambushes, escape routes)
+  chance *= Math.max(0.4, 1 - char.cunning * 0.06);
+
+  if (char.role === 'champion') chance *= 1.3;
+  if (char.role === 'advisor' || char.role === 'diplomat') chance *= 0.2;
+  if (char.status === 'wounded') chance *= 2.0;
+
+  const survived = !rng.chance(chance);
+
+  if (!survived) {
+    const narratives = wasRaider ? [
+      `${char.name} was caught in an ambush during the raid and killed.`,
+      `${char.name} took an arrow leading the raiders. They didn't make it back.`,
+      `${char.name} fell during the raid — a death unworthy of their legend.`,
+    ] : [
+      `${char.name} was killed defending against the raid.`,
+      `${char.name} died in the fighting when raiders overran the defenses.`,
+      `A raider's blade found ${char.name} in the chaos. They bled out before dawn.`,
+    ];
+    return { survived: false, wounded: false, narrative: rng.pick(narratives) };
+  }
+
+  const woundChance = chance * 2.5;
+  if (rng.chance(woundChance) && char.status === 'active') {
+    return {
+      survived: true,
+      wounded: true,
+      narrative: `${char.name} was injured during the raid. A painful reminder of mortality.`,
+    };
+  }
+
+  return { survived: true, wounded: false, narrative: '' };
+}
+
+/**
+ * Non-combat death and misfortune events.
+ * Called once per turn per character. Assassination, illness, accidents.
+ * Chance scales with world danger (corruption, enemies, etc.)
+ */
+export function rollNonCombatPerils(
+  char: Character,
+  state: WorldState,
+  rng: SeededRNG,
+): WorldEvent[] {
+  if (char.status !== 'active') return [];
+
+  const events: WorldEvent[] = [];
+  const faction = state.factions[char.factionId];
+  if (!faction) return [];
+
+  // --- Assassination attempts (enemies + high renown = target)
+  const enemyCount = faction.enemies.length;
+  const assassinationChance = 0.005 + enemyCount * 0.008 + (char.renown >= 70 ? 0.01 : 0);
+
+  if (rng.chance(assassinationChance)) {
+    // Cunning determines if they survive
+    const survives = rng.chance(0.3 + char.cunning * 0.07);
+    if (!survives) {
+      applyCharacterDeath(
+        char, `Assassinated at ${state.locations[char.locationId]?.name ?? 'an unknown location'}`,
+        state.turn, state, true
+      );
+      events.push({
+        id: `assassination_${char.id}_t${state.turn}`,
+        turn: state.turn,
+        season: state.season,
+        year: state.year,
+        type: 'betrayal',
+        text: `${char.name} has been assassinated! A blade in the dark ends their story.`,
+        icon: '🗡️',
+        factionId: char.factionId,
+        locationId: char.locationId,
+        consequences: [`${faction.name} reels from the loss`],
+        hookPotential: 5,
+      });
+      return events;
+    } else {
+      // Survived but wounded
+      applyCharacterWound(char, state.turn);
+      events.push({
+        id: `assassination_survive_${char.id}_t${state.turn}`,
+        turn: state.turn,
+        season: state.season,
+        year: state.year,
+        type: 'betrayal',
+        text: `An assassination attempt on ${char.name}! They survived, but barely — wounded by a poisoned blade.`,
+        icon: '🗡️',
+        factionId: char.factionId,
+        locationId: char.locationId,
+        consequences: [`${char.name} wounded by assassin`],
+        hookPotential: 4,
+      });
+      return events;
+    }
+  }
+
+  // --- Illness / fever (worse in winter, worse when wounded recently)
+  const isWinter = state.season === 'Winter';
+  const illnessChance = (isWinter ? 0.012 : 0.004) + ((char.timesWounded ?? 0) >= 2 ? 0.008 : 0);
+
+  if (rng.chance(illnessChance)) {
+    // Prowess (physical toughness) determines survival
+    const survives = rng.chance(0.4 + char.prowess * 0.06);
+    if (!survives) {
+      applyCharacterDeath(
+        char, `Died of fever in ${state.season}, Year ${state.year}`,
+        state.turn, state, true
+      );
+      events.push({
+        id: `illness_${char.id}_t${state.turn}`,
+        turn: state.turn,
+        season: state.season,
+        year: state.year,
+        type: 'plague',
+        text: `${char.name} succumbs to a fever${isWinter ? ' in the bitter cold' : ''}. ${char.title} passes from this world.`,
+        icon: '🦠',
+        factionId: char.factionId,
+        locationId: char.locationId,
+        consequences: [`${faction.name} loses their ${char.role}`],
+        hookPotential: 4,
+      });
+    } else {
+      applyCharacterWound(char, state.turn);
+      events.push({
+        id: `illness_survive_${char.id}_t${state.turn}`,
+        turn: state.turn,
+        season: state.season,
+        year: state.year,
+        type: 'plague',
+        text: `${char.name} falls gravely ill${isWinter ? ' as winter tightens its grip' : ''}. They will recover, but slowly.`,
+        icon: '🤒',
+        factionId: char.factionId,
+        locationId: char.locationId,
+        consequences: [`${char.name} bedridden`],
+        hookPotential: 2,
+      });
+    }
+  }
+
+  return events;
 }
 
 /**
  * Apply character death — updates state and generates consequences.
  * Some deaths have cascading effects (faction leader death = morale crash).
+ *
+ * If `silent` is true, applies the state changes (death, morale, power)
+ * but does NOT generate events — the caller is responsible for the narrative.
  */
 export function applyCharacterDeath(
   char: Character,
   cause: string,
   turn: number,
   state: WorldState,
+  silent = false,
 ): WorldEvent[] {
   const events: WorldEvent[] = [];
 
@@ -152,42 +326,45 @@ export function applyCharacterDeath(
   if (faction.leader === char.name) {
     moraleLoss += 15;
     faction.morale = clamp(faction.morale - moraleLoss, 0, 100);
-
-    events.push({
-      id: `char_death_leader_${char.id}_t${turn}`,
-      turn,
-      season: state.season,
-      year: state.year,
-      type: 'battle',
-      text: `${char.name}, ${char.title}, has been killed! ${faction.name} is thrown into disarray.`,
-      icon: '💀',
-      factionId: faction.id,
-      locationId: char.locationId,
-      consequences: [
-        `${faction.name} morale -${moraleLoss}`,
-        `${faction.name} leadership in crisis`,
-      ],
-      hookPotential: 5,
-    });
-
     // Power loss from leadership vacuum
     faction.power = clamp(faction.power - Math.floor(faction.power * 0.15), 0, faction.maxPower);
+
+    if (!silent) {
+      events.push({
+        id: `char_death_leader_${char.id}_t${turn}`,
+        turn,
+        season: state.season,
+        year: state.year,
+        type: 'battle',
+        text: `${char.name}, ${char.title}, has been killed! ${faction.name} is thrown into disarray.`,
+        icon: '💀',
+        factionId: faction.id,
+        locationId: char.locationId,
+        consequences: [
+          `${faction.name} morale -${moraleLoss}`,
+          `${faction.name} leadership in crisis`,
+        ],
+        hookPotential: 5,
+      });
+    }
   } else {
     faction.morale = clamp(faction.morale - moraleLoss, 0, 100);
 
-    events.push({
-      id: `char_death_${char.id}_t${turn}`,
-      turn,
-      season: state.season,
-      year: state.year,
-      type: 'battle',
-      text: `${char.name} has fallen. ${faction.name} mourns their ${char.role}.`,
-      icon: '💀',
-      factionId: faction.id,
-      locationId: char.locationId,
-      consequences: [`${faction.name} morale -${moraleLoss}`],
-      hookPotential: 4,
-    });
+    if (!silent) {
+      events.push({
+        id: `char_death_${char.id}_t${turn}`,
+        turn,
+        season: state.season,
+        year: state.year,
+        type: 'battle',
+        text: `${char.name} has fallen. ${faction.name} mourns their ${char.role}.`,
+        icon: '💀',
+        factionId: faction.id,
+        locationId: char.locationId,
+        consequences: [`${faction.name} morale -${moraleLoss}`],
+        hookPotential: 4,
+      });
+    }
   }
 
   return events;

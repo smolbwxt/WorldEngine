@@ -10,6 +10,8 @@ import {
   processCharacterPhase,
   getCharacterAtLocation,
   rollCharacterSurvival,
+  rollCharacterRaidSurvival,
+  rollNonCombatPerils,
   applyCharacterDeath,
   applyCharacterWound,
   updateCharacterRenown,
@@ -95,6 +97,11 @@ export function resolveTurn(state: WorldState, config: SimulationConfig = DEFAUL
   // 5b. Character Phase — wound recovery, movement, morale bonuses, progression
   if (state.characters) {
     events.push(...processCharacterPhase(state, rng));
+
+    // Non-combat perils — assassination, illness, accidents
+    for (const char of Object.values(state.characters)) {
+      events.push(...rollNonCombatPerils(char, state, rng));
+    }
 
     // Character progression — surviving characters gain traits, abilities, stat boosts
     for (const char of Object.values(state.characters)) {
@@ -221,6 +228,12 @@ function executeFactionAction(
       const defender = getLocationController(target.id, state);
       const result = resolveRaid(faction, target, defender, rng, config);
 
+      // Find characters involved in the raid
+      const raiderChar = state.characters ? getCharacterAtLocation(faction.id, faction.controlledLocations[0], state) : null;
+      const defenderChar = defender && state.characters ? getCharacterAtLocation(defender.id, target.id, state) : null;
+
+      const raidCharConsequences: string[] = [];
+
       if (result.success) {
         // Apply raid loot multiplier for bandits/goblins
         const am = config.actionMultipliers;
@@ -232,19 +245,45 @@ function executeFactionAction(
         faction.power = clamp(faction.power - result.raiderLosses, 0, faction.maxPower);
         target.population = Math.max(0, target.population - rng.int(rc.populationDamageRange[0], rc.populationDamageRange[1]));
 
+        // Character survival during raid
+        if (raiderChar) {
+          const survival = rollCharacterRaidSurvival(raiderChar, true, true, rng);
+          if (!survival.survived) {
+            events.push(...applyCharacterDeath(raiderChar, `Killed raiding ${target.name}`, state.turn, state));
+            raidCharConsequences.push(survival.narrative);
+          } else if (survival.wounded) {
+            applyCharacterWound(raiderChar, state.turn);
+            raidCharConsequences.push(survival.narrative);
+          } else {
+            raiderChar.renown = clamp(raiderChar.renown + 2, 0, 100);
+          }
+        }
+        if (defenderChar) {
+          const survival = rollCharacterRaidSurvival(defenderChar, true, false, rng);
+          if (!survival.survived) {
+            events.push(...applyCharacterDeath(defenderChar, `Killed when ${target.name} was raided`, state.turn, state));
+            raidCharConsequences.push(survival.narrative);
+          } else if (survival.wounded) {
+            applyCharacterWound(defenderChar, state.turn);
+            raidCharConsequences.push(survival.narrative);
+          }
+        }
+
+        const charNarrative = raiderChar ? ` ${raiderChar.name} led the raid.` : '';
         events.push({
           id: `raid_${faction.id}_${target.id}_t${state.turn}`,
           turn: state.turn,
           season: state.season,
           year: state.year,
           type: 'raid',
-          text: `${faction.name} raids ${target.name}! They seize ${boostedLoot} gold and leave destruction in their wake.`,
+          text: `${faction.name} raids ${target.name}! They seize ${boostedLoot} gold and leave destruction in their wake.${charNarrative}`,
           icon: '🔥',
           factionId: faction.id,
           locationId: target.id,
           consequences: [
             `${target.name} prosperity -${result.prosperityDamage}`,
             `${faction.name} gold +${boostedLoot}`,
+            ...raidCharConsequences,
           ],
           hookPotential: target.population > 500 ? 4 : 3,
         });
@@ -260,6 +299,19 @@ function executeFactionAction(
         }
       } else {
         faction.power = clamp(faction.power - result.raiderLosses, 0, faction.maxPower);
+
+        // Failed raid — raider character at greater risk
+        if (raiderChar) {
+          const survival = rollCharacterRaidSurvival(raiderChar, false, true, rng);
+          if (!survival.survived) {
+            events.push(...applyCharacterDeath(raiderChar, `Killed in failed raid on ${target.name}`, state.turn, state));
+            raidCharConsequences.push(survival.narrative);
+          } else if (survival.wounded) {
+            applyCharacterWound(raiderChar, state.turn);
+            raidCharConsequences.push(survival.narrative);
+          }
+        }
+
         events.push({
           id: `raid_fail_${faction.id}_${target.id}_t${state.turn}`,
           turn: state.turn,
@@ -270,7 +322,7 @@ function executeFactionAction(
           icon: '🛡️',
           factionId: faction.id,
           locationId: target.id,
-          consequences: [`${faction.name} power -${result.raiderLosses}`],
+          consequences: [`${faction.name} power -${result.raiderLosses}`, ...raidCharConsequences],
           hookPotential: 2,
         });
       }
@@ -512,7 +564,7 @@ function executeFactionAction(
           if (!survival.survived) {
             events.push(...applyCharacterDeath(atkChar, `Killed in battle at ${target.name}`, state.turn, state));
             charConsequences.push(survival.narrative);
-          } else if (survival.narrative) {
+          } else if (survival.wounded) {
             applyCharacterWound(atkChar, state.turn);
             charConsequences.push(survival.narrative);
           }
@@ -524,7 +576,7 @@ function executeFactionAction(
           if (!survival.survived) {
             events.push(...applyCharacterDeath(defChar, `Killed defending ${target.name}`, state.turn, state));
             charConsequences.push(survival.narrative);
-          } else if (survival.narrative) {
+          } else if (survival.wounded) {
             applyCharacterWound(defChar, state.turn);
             charConsequences.push(survival.narrative);
           }
