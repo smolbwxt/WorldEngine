@@ -31,6 +31,10 @@ const LOCATION_ICONS: Record<string, string> = {
   mine: '⛏',
   tower: '▲',
   dungeon: '◈',
+  catacombs: '▽',
+  port: '⚓',
+  shrine: '✦',
+  outpost: '⬡',
 };
 
 type MapView = 'procedural' | 'artistic';
@@ -40,6 +44,80 @@ function getControllingFaction(locId: string, state: WorldState): string | null 
     if (f.controlledLocations.includes(locId)) return f.id;
   }
   return null;
+}
+
+// Influence radius per location type (in SVG coordinate units, 0-160 range)
+const INFLUENCE_RADIUS: Record<string, number> = {
+  capital: 28,
+  fortress: 20,
+  castle: 18,
+  town: 16,
+  village: 12,
+  port: 15,
+  outpost: 13,
+  mine: 10,
+  tower: 8,
+  temple: 8,
+  ruins: 5,
+  lair: 5,
+  dungeon: 5,
+  catacombs: 5,
+  shrine: 6,
+};
+
+interface TerritoryCell {
+  factionId: string;
+  strength: number; // 0-1, fades at edges
+}
+
+/** Compute territory overlay: for each grid cell, find dominant faction influence */
+function computeTerritoryOverlay(
+  state: WorldState,
+  gridW: number,
+  gridH: number,
+  cellSize: number,
+): (TerritoryCell | null)[][] {
+  const locations = Object.values(state.locations);
+
+  // Build list of faction-controlled locations with their influence
+  const controlled: { loc: Location; factionId: string; radius: number }[] = [];
+  for (const loc of locations) {
+    const fid = getControllingFaction(loc.id, state);
+    if (!fid) continue;
+    controlled.push({
+      loc,
+      factionId: fid,
+      radius: INFLUENCE_RADIUS[loc.type] ?? 6,
+    });
+  }
+
+  const result: (TerritoryCell | null)[][] = [];
+  for (let gy = 0; gy < gridH; gy++) {
+    result[gy] = [];
+    for (let gx = 0; gx < gridW; gx++) {
+      // World coordinate of cell center
+      const wx = gx * cellSize + cellSize / 2;
+      const wy = gy * cellSize + cellSize / 2;
+
+      let bestFaction: string | null = null;
+      let bestStrength = 0;
+
+      for (const { loc, factionId, radius } of controlled) {
+        const dx = wx - loc.x;
+        const dy = wy - loc.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist >= radius) continue;
+        const strength = 1 - dist / radius;
+        if (strength > bestStrength) {
+          bestStrength = strength;
+          bestFaction = factionId;
+        }
+      }
+
+      result[gy][gx] = bestFaction ? { factionId: bestFaction, strength: bestStrength } : null;
+    }
+  }
+  return result;
 }
 
 // Generate decorative features (trees, mountains, waves) as SVG elements
@@ -193,7 +271,7 @@ function ArtisticMapLayer({ imageData }: { imageData: MapGenResult }) {
     <image
       href={src}
       x="0" y="0"
-      width="100" height="100"
+      width="160" height="160"
       preserveAspectRatio="xMidYMid slice"
     />
   );
@@ -247,6 +325,7 @@ export default function WorldMap({ worldState, selectedFaction, onLocationSelect
   const [generating, setGenerating] = useState(false);
   const [genError, setGenError] = useState<string | null>(null);
   const [userDesc, setUserDesc] = useState('');
+  const [showTerritory, setShowTerritory] = useState(true);
 
   const locations = Object.values(worldState.locations);
 
@@ -254,6 +333,12 @@ export default function WorldMap({ worldState, selectedFaction, onLocationSelect
   const terrain = useMemo(
     () => generateTerrain(locations, worldState.turn ?? 42),
     [locations.length],
+  );
+
+  // Territory overlay (memoized per turn)
+  const territory = useMemo(
+    () => computeTerritoryOverlay(worldState, terrain.width, terrain.height, terrain.cellSize),
+    [worldState.turn, terrain],
   );
 
   // Build connection lines
@@ -319,14 +404,24 @@ export default function WorldMap({ worldState, selectedFaction, onLocationSelect
       </div>
 
       {/* Controls */}
-      <MapControls
-        view={mapView}
-        onToggleView={handleToggleView}
-        onGenerate={handleGenerate}
-        generating={generating}
-        hasArtistic={!!artisticMap}
-        error={genError}
-      />
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+        <MapControls
+          view={mapView}
+          onToggleView={handleToggleView}
+          onGenerate={handleGenerate}
+          generating={generating}
+          hasArtistic={!!artisticMap}
+          error={genError}
+        />
+        <button
+          className="map-control-btn"
+          onClick={() => setShowTerritory(v => !v)}
+          style={{ opacity: showTerritory ? 1 : 0.5 }}
+          title="Toggle faction territory overlay"
+        >
+          {showTerritory ? 'Hide Territory' : 'Show Territory'}
+        </button>
+      </div>
 
       {/* Generating overlay */}
       {generating && (
@@ -339,7 +434,7 @@ export default function WorldMap({ worldState, selectedFaction, onLocationSelect
         </div>
       )}
 
-      <svg viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet">
+      <svg viewBox="0 0 160 160" preserveAspectRatio="xMidYMid meet">
         {showProcedural ? (
           <>
             {/* Terrain base layer */}
@@ -354,6 +449,25 @@ export default function WorldMap({ worldState, selectedFaction, onLocationSelect
                   fill={TERRAIN_COLORS[cell.terrain]}
                 />
               ))
+            )}
+            {/* Territory overlay */}
+            {showTerritory && territory.map((row, gy) =>
+              row.map((cell, gx) => {
+                if (!cell) return null;
+                const color = FACTION_COLORS[cell.factionId];
+                if (!color) return null;
+                return (
+                  <rect
+                    key={`ter${gx}-${gy}`}
+                    x={gx * terrain.cellSize}
+                    y={gy * terrain.cellSize}
+                    width={terrain.cellSize}
+                    height={terrain.cellSize}
+                    fill={color}
+                    opacity={cell.strength * 0.25}
+                  />
+                );
+              })
             )}
             <TerrainDecorations terrain={terrain} />
             <RiverPaths terrain={terrain} />
@@ -469,6 +583,28 @@ export default function WorldMap({ worldState, selectedFaction, onLocationSelect
             <span className="stat">Def: <strong>{hoveredLoc.defense}</strong></span>
             <span className="stat">Prosp: <strong>{hoveredLoc.prosperity}</strong></span>
           </div>
+        </div>
+      )}
+
+      {/* Faction legend */}
+      {showTerritory && (
+        <div style={{
+          display: 'flex', flexWrap: 'wrap', gap: '6px 14px',
+          fontSize: '0.7rem', color: 'var(--text-muted)', padding: '4px',
+        }}>
+          {Object.values(worldState.factions).map(f => (
+            <span key={f.id} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <span style={{
+                width: 10, height: 10,
+                background: FACTION_COLORS[f.id] ?? '#555',
+                border: '1px solid rgba(255,255,255,0.2)',
+                borderRadius: 2,
+                display: 'inline-block',
+              }} />
+              {f.name}
+              <span style={{ opacity: 0.5 }}>({f.controlledLocations.length})</span>
+            </span>
+          ))}
         </div>
       )}
 
