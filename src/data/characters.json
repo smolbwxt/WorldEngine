@@ -14,7 +14,11 @@
     "loyalty": 100,
     "woundedUntilTurn": 0,
     "description": "A weak ruler clinging to a legacy he didn't earn. His paranoia grows with each season, but the crown still commands respect — for now.",
-    "traits": ["weak-willed", "paranoid", "legacy-of-greatness"],
+    "traits": [
+      "weak-willed",
+      "paranoid",
+      "legacy-of-greatness"
+    ],
     "abilities": [
       {
         "id": "imperial_mandate",
@@ -26,7 +30,10 @@
     ],
     "killCount": 0,
     "battlesWon": 0,
-    "battlesLost": 0
+    "battlesLost": 0,
+    "timesWounded": 0,
+    "activeSince": 0,
+    "titleHistory": []
   },
   {
     "id": "cassius_varn",
@@ -43,7 +50,12 @@
     "loyalty": 85,
     "woundedUntilTurn": 0,
     "description": "The real military power behind the throne. Varn is everything Marius isn't — decisive, courageous, and respected by the troops. Some whisper he should wear the crown himself.",
-    "traits": ["battle-hardened", "loyal-but-tested", "tactical-genius", "stoic"],
+    "traits": [
+      "battle-hardened",
+      "loyal-but-tested",
+      "tactical-genius",
+      "stoic"
+    ],
     "abilities": [
       {
         "id": "iron_discipline",
@@ -63,7 +75,10 @@
     ],
     "killCount": 0,
     "battlesWon": 0,
-    "battlesLost": 0
+    "battlesLost": 0,
+    "activeSince": 0,
+    "timesWounded": 0,
+    "titleHistory": []
   },
   {
     "id": "aldric_valdris",
@@ -80,7 +95,12 @@
     "loyalty": 100,
     "woundedUntilTurn": 0,
     "description": "Every smile hides a dagger. Aldric plays the long game, positioning his house to inherit the empire when — not if — it collapses.",
-    "traits": ["ambitious", "calculating", "patient", "treacherous"],
+    "traits": [
+      "ambitious",
+      "calculating",
+      "patient",
+      "treacherous"
+    ],
     "abilities": [
       {
         "id": "web_of_whispers",
@@ -99,7 +119,10 @@
     ],
     "killCount": 0,
     "battlesWon": 0,
-    "battlesLost": 0
+    "battlesLost": 0,
+    "activeSince": 0,
+    "timesWounded": 0,
+    "titleHistory": []
   },
   {
     "id": "ser_roland",
@@ -116,7 +139,12 @@
     "loyalty": 90,
     "woundedUntilTurn": 0,
     "description": "A tournament knight who has never lost a duel. Roland fights for glory and gold — Valdris pays well for both. His loyalty is to the coin, but his pride is to the blade.",
-    "traits": ["fearless", "vain", "duelist", "mercenary-at-heart"],
+    "traits": [
+      "fearless",
+      "vain",
+      "duelist",
+      "mercenary-at-heart"
+    ],
     "abilities": [
       {
         "id": "duel_challenge",
@@ -129,7 +157,10 @@
     ],
     "killCount": 0,
     "battlesWon": 0,
-    "battlesLost": 0
+    "battlesLost": 0,
+    "activeSince": 0,
+    "timesWounded": 0,
+    "titleHistory": []
   },
   {
     "id": "elara_thorne",
@@ -146,7 +177,12 @@
     "loyalty": 100,
     "woundedUntilTurn": 0,
     "description": "She leads from the front and her soldiers would die for her. Elara is everything the empire should be — just, brave, and dangerously outnumbered.",
-    "traits": ["principled", "brave", "inspiring", "under-resourced"],
+    "traits": [
+      "principled",
+      "brave",
+      "inspiring",
+      "under-resourced"
+    ],
     "abilities": [
       {
         "id": "rally_the_hopeless",
@@ -159,7 +195,10 @@
     ],
     "killCount": 0,
     "battlesWon": 0,
-    "battlesLost": 0
+    "battlesLost": 0,
+    "activeSince": 0,
+    "timesWounded": 0,
+    "titleHistory": []
   },
   {
     "id": "brother_caelen",
@@ -176,7 +215,12 @@
     "loyalty": 95,
     "woundedUntilTurn": 0,
     "description": "A former monk who took up the sword when goblins burned his monastery. Fights with a terrifying calm, as if violence were just another form of prayer.",
-    "traits": ["devout", "relentless", "quiet", "haunted"],
+    "traits": [
+      "devout",
+      "relentless",
+      "quiet",
+      "haunted"
+    ],
     "abilities": [
       {
         "id": "righteous_fury",
@@ -188,7 +232,10 @@
     ],
     "killCount": 0,
     "battlesWon": 0,
-    "battlesLost": 0
+    "battlesLost": 0,
+    "activeSince": 0,
+    "timesWounded": 0,
+    "titleHistory": []
   },
   {
     "id": "scar",
@@ -205,7 +252,12 @@
     "loyalty": 100,
     "woundedUntilTurn": 0,
     "description": "Born a farmer, forged by famine. Scar didn't choose this life — but he's terrifyingly good at it. His followers see him as a liberator. The empire sees a monster.",
-    "traits": ["pragmatic", "formerly-a-farmer", "ruthless", "survivor"],
+    "traits": [
+      "pragmatic",
+      "formerly-a-farmer",
+      "ruthless",
+      "survivor"
+    ],
     "abilities": [
       {
         "id": "guerrilla_tactics",
@@ -224,7 +276,10 @@
     ],
     "killCount": 0,
     "battlesWon": 0,
-    "battlesLost": 0
+    "battlesLost": 0,
+    "activeSince": 0,
+    "timesWounded": 0,
+    "titleHistory": []
   },
   {
     "id": "maren_ashwick",
@@ -241,7 +296,12 @@
     "loyalty": 100,
     "woundedUntilTurn": 0,
     "description": "She keeps her people alive through wit and ruthlessness. Every fight is calculated — Maren doesn't believe in fair ones.",
-    "traits": ["desperate", "cunning", "survivalist", "loyal-to-her-own"],
+    "traits": [
+      "desperate",
+      "cunning",
+      "survivalist",
+      "loyal-to-her-own"
+    ],
     "abilities": [
       {
         "id": "vanish",
@@ -253,7 +313,10 @@
     ],
     "killCount": 0,
     "battlesWon": 0,
-    "battlesLost": 0
+    "battlesLost": 0,
+    "activeSince": 0,
+    "timesWounded": 0,
+    "titleHistory": []
   },
   {
     "id": "warchief_grak",
@@ -270,7 +333,12 @@
     "loyalty": 100,
     "woundedUntilTurn": 0,
     "description": "The first goblin in living memory to unite the tribes under one banner. Grak is not merely brutal — he's strategic. The surface-dwellers are only beginning to understand what that means.",
-    "traits": ["brutal", "charismatic", "surprisingly-strategic", "wrathful"],
+    "traits": [
+      "brutal",
+      "charismatic",
+      "surprisingly-strategic",
+      "wrathful"
+    ],
     "abilities": [
       {
         "id": "waaagh",
@@ -290,7 +358,10 @@
     ],
     "killCount": 0,
     "battlesWon": 0,
-    "battlesLost": 0
+    "battlesLost": 0,
+    "activeSince": 0,
+    "timesWounded": 0,
+    "titleHistory": []
   },
   {
     "id": "skrit",
@@ -307,7 +378,12 @@
     "loyalty": 70,
     "woundedUntilTurn": 0,
     "description": "Leads the sappers and tunnel-rats. Skrit's specialty is appearing where nobody expects goblins to be — inside walls, under floors, behind lines.",
-    "traits": ["devious", "cowardly-but-effective", "tunnel-vision", "ambitious"],
+    "traits": [
+      "devious",
+      "cowardly-but-effective",
+      "tunnel-vision",
+      "ambitious"
+    ],
     "abilities": [
       {
         "id": "undermine",
@@ -319,7 +395,10 @@
     ],
     "killCount": 0,
     "battlesWon": 0,
-    "battlesLost": 0
+    "battlesLost": 0,
+    "activeSince": 0,
+    "timesWounded": 0,
+    "titleHistory": []
   },
   {
     "id": "sera_blackwood",
@@ -336,7 +415,12 @@
     "loyalty": 100,
     "woundedUntilTurn": 0,
     "description": "Money is the only loyalty Sera understands, and she has more of it than anyone. She doesn't fight wars — she funds the right side of them.",
-    "traits": ["pragmatic", "wealthy", "amoral", "well-connected"],
+    "traits": [
+      "pragmatic",
+      "wealthy",
+      "amoral",
+      "well-connected"
+    ],
     "abilities": [
       {
         "id": "war_profiteer",
@@ -354,6 +438,9 @@
     ],
     "killCount": 0,
     "battlesWon": 0,
-    "battlesLost": 0
+    "battlesLost": 0,
+    "activeSince": 0,
+    "timesWounded": 0,
+    "titleHistory": []
   }
 ]

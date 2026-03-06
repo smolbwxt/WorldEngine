@@ -39,9 +39,13 @@ function StatPips({ value, max = 10, color }: { value: number; max?: number; col
   );
 }
 
-function CharacterCard({ char, factionName }: { char: Character; factionName: string }) {
+function CharacterCard({ char, factionName, currentTurn }: { char: Character; factionName: string; currentTurn: number }) {
   const statusStyle = STATUS_STYLES[char.status] ?? STATUS_STYLES.active;
   const isDead = char.status === 'dead';
+  const turnsActive = (isDead ? (char.deathTurn ?? currentTurn) : currentTurn) - (char.activeSince ?? 0);
+  const yearsActive = Math.floor(turnsActive / 4);
+  const startingAbilityCount = char.abilities.filter(a => !a.gainedTurn).length;
+  const earnedAbilityCount = char.abilities.length - startingAbilityCount;
 
   return (
     <div
@@ -59,17 +63,29 @@ function CharacterCard({ char, factionName }: { char: Character; factionName: st
           <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)', margin: '2px 0' }}>
             {char.title} — {factionName}
           </p>
+          {char.titleHistory && char.titleHistory.length > 0 && (
+            <p style={{ fontSize: '0.55rem', color: 'var(--text-muted)', margin: 0, opacity: 0.7 }}>
+              formerly: {char.titleHistory[0]}
+            </p>
+          )}
         </div>
-        <span style={{
-          fontSize: '0.6rem',
-          padding: '1px 6px',
-          borderRadius: 3,
-          background: statusStyle.color,
-          color: '#fff',
-          fontWeight: 'bold',
-        }}>
-          {statusStyle.label}
-        </span>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
+          <span style={{
+            fontSize: '0.6rem',
+            padding: '1px 6px',
+            borderRadius: 3,
+            background: statusStyle.color,
+            color: '#fff',
+            fontWeight: 'bold',
+          }}>
+            {statusStyle.label}
+          </span>
+          {yearsActive > 0 && (
+            <span style={{ fontSize: '0.55rem', color: 'var(--text-muted)' }}>
+              {yearsActive} yr{yearsActive !== 1 ? 's' : ''} active
+            </span>
+          )}
+        </div>
       </div>
 
       {!isDead && (
@@ -89,6 +105,7 @@ function CharacterCard({ char, factionName }: { char: Character; factionName: st
           <div style={{ display: 'flex', gap: 10, marginTop: 4, fontSize: '0.65rem', color: 'var(--text-muted)' }}>
             <span>Renown: {char.renown}</span>
             <span>W: {char.battlesWon} / L: {char.battlesLost}</span>
+            {(char.timesWounded ?? 0) > 0 && <span>Wounds: {char.timesWounded}</span>}
             {char.killCount > 0 && <span>Kills: {char.killCount}</span>}
           </div>
         </>
@@ -122,18 +139,29 @@ function CharacterCard({ char, factionName }: { char: Character; factionName: st
 
       {char.abilities.length > 0 && !isDead && (
         <div style={{ marginTop: 6 }}>
+          {earnedAbilityCount > 0 && (
+            <p style={{ fontSize: '0.55rem', color: '#c90', margin: '0 0 3px', fontWeight: 'bold' }}>
+              {earnedAbilityCount} earned abilit{earnedAbilityCount !== 1 ? 'ies' : 'y'}
+            </p>
+          )}
           {char.abilities.map(a => (
             <div key={a.id} style={{
               fontSize: '0.6rem',
               padding: '3px 5px',
               marginTop: 2,
-              background: 'rgba(255,255,255,0.04)',
+              background: a.gainedTurn ? 'rgba(204,153,0,0.08)' : 'rgba(255,255,255,0.04)',
               borderRadius: 3,
-              borderLeft: `2px solid ${a.passive ? '#4a8' : '#c84'}`,
+              borderLeft: `2px solid ${a.gainedTurn ? '#c90' : a.passive ? '#4a8' : '#c84'}`,
             }}>
               <strong>{a.name}</strong>
               {a.combatBonus ? ` (+${a.combatBonus} combat)` : ''}
               {a.moraleBonus ? ` (+${a.moraleBonus} morale)` : ''}
+              {a.economyBonus ? ` (+${Math.round(a.economyBonus * 100)}% income)` : ''}
+              {a.gainedTurn ? (
+                <span style={{ color: '#c90', marginLeft: 4 }}>
+                  [earned T{a.gainedTurn}]
+                </span>
+              ) : null}
               <br />
               <span style={{ color: 'var(--text-muted)' }}>{a.description}</span>
             </div>
@@ -175,6 +203,7 @@ export default function CharacterPanel({ worldState, selectedFactionId }: Props)
           key={char.id}
           char={char}
           factionName={worldState.factions[char.factionId]?.name ?? 'Unknown'}
+          currentTurn={worldState.turn}
         />
       ))}
     </div>

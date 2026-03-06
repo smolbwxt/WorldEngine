@@ -1,4 +1,4 @@
-import type { Character, WorldState, WorldEvent, Faction, CombatResult } from './types.js';
+import type { Character, CharacterAbility, WorldState, WorldEvent, Faction, CombatResult } from './types.js';
 import type { SeededRNG } from './rng.js';
 import { clamp } from './world-state.js';
 
@@ -196,6 +196,7 @@ export function applyCharacterDeath(
 /** Apply wound to a character */
 export function applyCharacterWound(char: Character, currentTurn: number): void {
   char.status = 'wounded';
+  char.timesWounded = (char.timesWounded ?? 0) + 1;
   char.woundedUntilTurn = currentTurn + 2 + Math.floor(Math.random() * 2); // 2-3 turns
 }
 
@@ -296,4 +297,372 @@ export function updateCharacterRenown(
     char.renown = clamp(char.renown - renownLoss, 0, 100);
     char.battlesLost++;
   }
+}
+
+// ============================================================
+// Character Progression System
+//
+// The longer a character survives, the more features they
+// accumulate — traits, abilities, stat gains, title upgrades.
+// Random each turn, weighted by what the character has done.
+// Makes long-lived characters feel legendary.
+// ============================================================
+
+interface ProgressionEntry {
+  weight: number;
+  condition: (char: Character, state: WorldState) => boolean;
+  apply: (char: Character, state: WorldState, rng: SeededRNG, turn: number) => string | null;
+}
+
+/** Traits that characters can gain from battle experience */
+const BATTLE_TRAITS = [
+  'battle-scarred', 'blood-soaked', 'unflinching', 'merciless',
+  'war-weary', 'cold-eyed', 'death-dealer', 'last-one-standing',
+];
+
+/** Traits gained from surviving wounds */
+const WOUND_TRAITS = [
+  'scarred', 'one-eyed', 'limping', 'iron-jawed', 'phantom-pains',
+  'half-deaf', 'burned', 'missing-fingers',
+];
+
+/** Traits gained from long survival / authority */
+const VETERAN_TRAITS = [
+  'grizzled', 'veteran', 'iron-willed', 'respected', 'weathered',
+  'unyielding', 'old-campaigner', 'seen-it-all',
+];
+
+/** Traits gained from high cunning / scheming */
+const CUNNING_TRAITS = [
+  'shadow-walker', 'nobody-trusts', 'three-steps-ahead', 'knife-in-the-dark',
+  'truth-reader', 'masked', 'unsettling', 'never-surprised',
+];
+
+/** Traits gained from high renown */
+const RENOWN_TRAITS = [
+  'legendary', 'the-peoples-hero', 'feared-by-all', 'living-legend',
+  'songs-written-about', 'name-spoken-in-whispers', 'icon',
+];
+
+/** Earned ability pool — gained through experience */
+const ABILITY_POOL: Array<{
+  id: string;
+  ability: CharacterAbility;
+  condition: (char: Character) => boolean;
+}> = [
+  {
+    id: 'bloodied_resolve',
+    ability: {
+      id: 'bloodied_resolve', name: 'Bloodied Resolve',
+      description: 'Years of fighting have forged an iron will. Harder to break, harder to kill.',
+      passive: true, combatBonus: 1, moraleBonus: 3,
+    },
+    condition: c => c.battlesWon >= 3 && c.prowess >= 5,
+  },
+  {
+    id: 'survival_instinct',
+    ability: {
+      id: 'survival_instinct', name: 'Survival Instinct',
+      description: 'Has been wounded enough times to know when to duck.',
+      passive: true, combatBonus: 1,
+    },
+    condition: c => (c.timesWounded ?? 0) >= 2,
+  },
+  {
+    id: 'tactical_adaptation',
+    ability: {
+      id: 'tactical_adaptation', name: 'Tactical Adaptation',
+      description: 'Learned from defeat. Each loss taught a lesson that won\'t be repeated.',
+      passive: true, combatBonus: 2,
+    },
+    condition: c => c.battlesLost >= 2 && c.battlesWon >= 1,
+  },
+  {
+    id: 'aura_of_command',
+    ability: {
+      id: 'aura_of_command', name: 'Aura of Command',
+      description: 'Troops instinctively follow this leader. Presence alone steadies the line.',
+      passive: true, moraleBonus: 8,
+    },
+    condition: c => c.authority >= 7 && c.renown >= 50,
+  },
+  {
+    id: 'old_soldiers_luck',
+    ability: {
+      id: 'old_soldiers_luck', name: 'Old Soldier\'s Luck',
+      description: 'Should have died a dozen times over. Somehow, still standing.',
+      passive: true, combatBonus: 1,
+    },
+    condition: c => c.battlesWon + c.battlesLost >= 5,
+  },
+  {
+    id: 'network_of_informants',
+    ability: {
+      id: 'network_of_informants', name: 'Network of Informants',
+      description: 'Years of cultivating contacts. Nothing happens without word reaching these ears.',
+      passive: true, combatBonus: 1, economyBonus: 0.05,
+    },
+    condition: c => c.cunning >= 7 && (c.role === 'spymaster' || c.role === 'diplomat'),
+  },
+  {
+    id: 'warlords_presence',
+    ability: {
+      id: 'warlords_presence', name: 'Warlord\'s Presence',
+      description: 'The mere sight of this warrior on the field demoralizes the enemy.',
+      passive: true, combatBonus: 2, moraleBonus: 5,
+    },
+    condition: c => c.prowess >= 8 && c.renown >= 70,
+  },
+  {
+    id: 'economizers_eye',
+    ability: {
+      id: 'economizers_eye', name: 'Economizer\'s Eye',
+      description: 'Knows how to stretch a coin. Faction income improved through shrewd management.',
+      passive: true, economyBonus: 0.1,
+    },
+    condition: c => c.authority >= 6 && (c.role === 'advisor' || c.role === 'diplomat'),
+  },
+  {
+    id: 'dread_reputation',
+    ability: {
+      id: 'dread_reputation', name: 'Dread Reputation',
+      description: 'Enemies think twice before engaging. Fear is a weapon all its own.',
+      passive: true, combatBonus: 2,
+    },
+    condition: c => c.renown >= 75 && c.prowess >= 6,
+  },
+  {
+    id: 'unbreakable',
+    ability: {
+      id: 'unbreakable', name: 'Unbreakable',
+      description: 'Has endured what would destroy lesser warriors. Nothing shakes this resolve.',
+      passive: true, combatBonus: 1, moraleBonus: 6,
+    },
+    condition: c => (c.timesWounded ?? 0) >= 3 && c.battlesWon >= 2,
+  },
+];
+
+/** Title upgrade thresholds */
+const TITLE_UPGRADES: Array<{
+  condition: (char: Character, yearsActive: number) => boolean;
+  titleFn: (char: Character, state: WorldState) => string;
+}> = [
+  {
+    condition: (c, y) => c.battlesWon >= 5 && c.renown >= 60 && y >= 2,
+    titleFn: (c) => {
+      if (c.role === 'commander' || c.role === 'warchief') return `Warlord of ${c.factionId.replace(/_/g, ' ')}`;
+      if (c.role === 'champion') return 'Slayer';
+      return `Veteran ${c.role}`;
+    },
+  },
+  {
+    condition: (c, y) => c.renown >= 80 && y >= 3,
+    titleFn: (c, state) => {
+      const faction = state.factions[c.factionId];
+      if (c.role === 'commander') return `Grand Marshal of ${faction?.name ?? 'the realm'}`;
+      if (c.role === 'warchief') return 'Conqueror';
+      if (c.role === 'champion') return 'Legendary Champion';
+      if (c.role === 'spymaster') return 'Shadowmaster';
+      return `High ${c.role}`;
+    },
+  },
+  {
+    condition: (c) => (c.timesWounded ?? 0) >= 3 && c.battlesWon >= 3,
+    titleFn: () => 'the Unkillable',
+  },
+  {
+    condition: (c, y) => y >= 5 && c.renown >= 90,
+    titleFn: () => 'the Undying',
+  },
+];
+
+/** Build the progression table */
+const PROGRESSION_TABLE: ProgressionEntry[] = [
+  // --- TRAIT: Battle experience (need 2+ battles)
+  {
+    weight: 25,
+    condition: (c) => c.battlesWon + c.battlesLost >= 2,
+    apply: (char, _state, rng, turn) => {
+      const available = BATTLE_TRAITS.filter(t => !char.traits.includes(t));
+      if (available.length === 0) return null;
+      const trait = rng.pick(available);
+      char.traits.push(trait);
+      return `${char.name} has become ${trait} — the mark of countless fights.`;
+    },
+  },
+
+  // --- TRAIT: Wound scars (need wound history)
+  {
+    weight: 20,
+    condition: (c) => (c.timesWounded ?? 0) >= 1,
+    apply: (char, _state, rng, turn) => {
+      const available = WOUND_TRAITS.filter(t => !char.traits.includes(t));
+      if (available.length === 0) return null;
+      const trait = rng.pick(available);
+      char.traits.push(trait);
+      return `${char.name} now bears the mark: ${trait}. A wound that never fully healed.`;
+    },
+  },
+
+  // --- TRAIT: Veteran (4+ turns active)
+  {
+    weight: 15,
+    condition: (c, state) => (state.turn - (c.activeSince ?? 0)) >= 4,
+    apply: (char, _state, rng) => {
+      const available = VETERAN_TRAITS.filter(t => !char.traits.includes(t));
+      if (available.length === 0) return null;
+      const trait = rng.pick(available);
+      char.traits.push(trait);
+      return `Time has changed ${char.name}. They are now ${trait}.`;
+    },
+  },
+
+  // --- TRAIT: Cunning (cunning >= 6)
+  {
+    weight: 10,
+    condition: (c) => c.cunning >= 6,
+    apply: (char, _state, rng) => {
+      const available = CUNNING_TRAITS.filter(t => !char.traits.includes(t));
+      if (available.length === 0) return null;
+      const trait = rng.pick(available);
+      char.traits.push(trait);
+      return `${char.name}'s reputation grows darker: ${trait}.`;
+    },
+  },
+
+  // --- TRAIT: Renown (renown >= 65)
+  {
+    weight: 10,
+    condition: (c) => c.renown >= 65,
+    apply: (char, _state, rng) => {
+      const available = RENOWN_TRAITS.filter(t => !char.traits.includes(t));
+      if (available.length === 0) return null;
+      const trait = rng.pick(available);
+      char.traits.push(trait);
+      return `${char.name} is now known as ${trait}. Their name carries weight.`;
+    },
+  },
+
+  // --- STAT: Prowess increase from battle
+  {
+    weight: 15,
+    condition: (c) => c.prowess < 10 && c.battlesWon >= 2,
+    apply: (char) => {
+      char.prowess = clamp(char.prowess + 1, 1, 10);
+      return `${char.name}'s prowess grows to ${char.prowess}. Battle is the best teacher.`;
+    },
+  },
+
+  // --- STAT: Cunning increase from survival
+  {
+    weight: 12,
+    condition: (c) => c.cunning < 10 && ((c.timesWounded ?? 0) >= 1 || c.battlesLost >= 1),
+    apply: (char) => {
+      char.cunning = clamp(char.cunning + 1, 1, 10);
+      return `${char.name}'s cunning sharpens to ${char.cunning}. Hard lessons learned.`;
+    },
+  },
+
+  // --- STAT: Authority increase from renown
+  {
+    weight: 12,
+    condition: (c) => c.authority < 10 && c.renown >= 50,
+    apply: (char) => {
+      char.authority = clamp(char.authority + 1, 1, 10);
+      return `${char.name}'s authority solidifies at ${char.authority}. People listen when they speak.`;
+    },
+  },
+
+  // --- ABILITY: Earned ability from experience
+  {
+    weight: 20,
+    condition: (c) => c.battlesWon + c.battlesLost >= 1,
+    apply: (char, _state, rng, turn) => {
+      const existingIds = new Set(char.abilities.map(a => a.id));
+      const eligible = ABILITY_POOL.filter(
+        a => !existingIds.has(a.id) && a.condition(char)
+      );
+      if (eligible.length === 0) return null;
+      const chosen = rng.pick(eligible);
+      char.abilities.push({ ...chosen.ability, gainedTurn: turn });
+      return `${char.name} gains a new ability: ${chosen.ability.name}. ${chosen.ability.description}`;
+    },
+  },
+
+  // --- TITLE: Upgrade title based on achievements
+  {
+    weight: 8,
+    condition: (c, state) => {
+      const yearsActive = Math.floor((state.turn - (c.activeSince ?? 0)) / 4);
+      return TITLE_UPGRADES.some(u => u.condition(c, yearsActive));
+    },
+    apply: (char, state, rng, turn) => {
+      const yearsActive = Math.floor((state.turn - (char.activeSince ?? 0)) / 4);
+      const eligible = TITLE_UPGRADES.filter(u => u.condition(char, yearsActive));
+      if (eligible.length === 0) return null;
+      const chosen = rng.pick(eligible);
+      const newTitle = chosen.titleFn(char, state);
+      if (newTitle === char.title) return null;
+      if (!char.titleHistory) char.titleHistory = [];
+      char.titleHistory.unshift(char.title);
+      char.title = newTitle;
+      return `${char.name} is now known as "${newTitle}". A new chapter in their legend.`;
+    },
+  },
+];
+
+/**
+ * Roll character progression for a single character.
+ * Called once per turn per living character.
+ * Base chance increases with years active — longer lived = more progression.
+ */
+export function rollCharacterProgression(
+  char: Character,
+  state: WorldState,
+  rng: SeededRNG,
+): WorldEvent[] {
+  if (char.status === 'dead') return [];
+
+  const events: WorldEvent[] = [];
+  const turnsActive = state.turn - (char.activeSince ?? 0);
+  const yearsActive = Math.floor(turnsActive / 4);
+
+  // Base progression chance: 15% per turn, +5% per year active (up to +25%)
+  // So a 5-year veteran has 40% chance per turn of gaining something
+  const baseChance = 0.15 + Math.min(0.25, yearsActive * 0.05);
+
+  if (!rng.chance(baseChance)) return [];
+
+  // Filter eligible progressions
+  const eligible = PROGRESSION_TABLE.filter(p => p.condition(char, state));
+  if (eligible.length === 0) return [];
+
+  // Weighted pick
+  const totalWeight = eligible.reduce((sum, p) => sum + p.weight, 0);
+  let roll = rng.int(0, totalWeight - 1);
+  let chosen: ProgressionEntry | null = null;
+  for (const entry of eligible) {
+    roll -= entry.weight;
+    if (roll < 0) { chosen = entry; break; }
+  }
+  if (!chosen) return [];
+
+  const narrative = chosen.apply(char, state, rng, state.turn);
+  if (!narrative) return [];
+
+  events.push({
+    id: `progression_${char.id}_t${state.turn}`,
+    turn: state.turn,
+    season: state.season,
+    year: state.year,
+    type: 'story_hook',
+    text: narrative,
+    icon: '⭐',
+    factionId: char.factionId,
+    locationId: char.locationId,
+    consequences: [],
+    hookPotential: 3,
+  });
+
+  return events;
 }

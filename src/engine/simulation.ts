@@ -14,6 +14,7 @@ import {
   applyCharacterWound,
   updateCharacterRenown,
   getFactionMoraleBonus,
+  rollCharacterProgression,
 } from './characters.js';
 import type { SimulationConfig } from './config.js';
 import { DEFAULT_CONFIG } from './config.js';
@@ -90,9 +91,14 @@ export function resolveTurn(state: WorldState, config: SimulationConfig = DEFAUL
   // 5. Consequence Phase — update relationships based on events
   processConsequences(state, events, rng, config);
 
-  // 5b. Character Phase — wound recovery, movement, morale bonuses
+  // 5b. Character Phase — wound recovery, movement, morale bonuses, progression
   if (state.characters) {
     events.push(...processCharacterPhase(state, rng));
+
+    // Character progression — surviving characters gain traits, abilities, stat boosts
+    for (const char of Object.values(state.characters)) {
+      events.push(...rollCharacterProgression(char, state, rng));
+    }
 
     // Apply passive morale bonuses from living characters
     for (const faction of Object.values(state.factions)) {
@@ -749,13 +755,14 @@ function generateDMBrief(state: WorldState, events: WorldEvent[]): string {
     lines.push(`  ${f.name}: Power ${f.power}/${f.maxPower} | Gold ${f.gold} | Morale ${f.morale} ${status}`);
   }
 
-  // Character casualties this turn
+  // Character casualties and progression this turn
   if (state.characters) {
     const deaths = Object.values(state.characters).filter(c => c.deathTurn === state.turn);
     const wounded = Object.values(state.characters).filter(
       c => c.status === 'wounded' && c.woundedUntilTurn > state.turn - 1
     );
-    if (deaths.length > 0 || wounded.length > 0) {
+    const progressionEvents = events.filter(e => e.id.startsWith('progression_'));
+    if (deaths.length > 0 || wounded.length > 0 || progressionEvents.length > 0) {
       lines.push('');
       lines.push('CHARACTERS:');
       for (const c of deaths) {
@@ -763,6 +770,9 @@ function generateDMBrief(state: WorldState, events: WorldEvent[]): string {
       }
       for (const c of wounded) {
         lines.push(`  WOUNDED: ${c.name} (${c.title}) — recovers turn ${c.woundedUntilTurn}`);
+      }
+      for (const e of progressionEvents) {
+        lines.push(`  GREW: ${e.text}`);
       }
     }
   }

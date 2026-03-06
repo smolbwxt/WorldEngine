@@ -217,6 +217,7 @@ export interface CharacterAbility {
   combatBonus?: number;  // added to rolls when present
   moraleBonus?: number;  // morale boost to faction
   economyBonus?: number; // gold income multiplier
+  gainedTurn?: number;   // turn when this ability was earned (undefined = starting ability)
 }
 
 export interface Character {
@@ -237,6 +238,7 @@ export interface Character {
   renown: number;         // 0-100, grows with victories
   loyalty: number;        // 0-100, to their faction
   woundedUntilTurn: number; // turn when wounds heal (0 = not wounded)
+  activeSince: number;    // turn when character entered play (0 = start)
 
   // Identity
   description: string;
@@ -247,8 +249,10 @@ export interface Character {
   killCount: number;
   battlesWon: number;
   battlesLost: number;
+  timesWounded: number;
   deathTurn?: number;
   deathCause?: string;
+  titleHistory: string[]; // previous titles, most recent first
 }
 
 export interface CombatResult {
