@@ -39,7 +39,7 @@ function StatPips({ value, max = 10, color }: { value: number; max?: number; col
   );
 }
 
-function CharacterCard({ char, factionName, currentTurn }: { char: Character; factionName: string; currentTurn: number }) {
+function CharacterCard({ char, factionName, currentTurn, worldState }: { char: Character; factionName: string; currentTurn: number; worldState: WorldState }) {
   const statusStyle = STATUS_STYLES[char.status] ?? STATUS_STYLES.active;
   const isDead = char.status === 'dead';
   const turnsActive = (isDead ? (char.deathTurn ?? currentTurn) : currentTurn) - (char.activeSince ?? 0);
@@ -117,6 +117,13 @@ function CharacterCard({ char, factionName, currentTurn }: { char: Character; fa
         </p>
       )}
 
+      {isDead && char.lastStand && (
+        <p style={{ fontSize: '0.65rem', color: '#c90', fontStyle: 'italic', marginTop: 2 }}>
+          ⚔️ LAST STAND: {char.lastStand.narrative}
+          {char.lastStand.flippedBattle && ' (Turned the tide!)'}
+        </p>
+      )}
+
       <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: 4, fontStyle: 'italic' }}>
         {char.description}
       </p>
@@ -168,6 +175,84 @@ function CharacterCard({ char, factionName, currentTurn }: { char: Character; fa
           ))}
         </div>
       )}
+
+      {/* Trophies */}
+      {char.trophies && char.trophies.length > 0 && (
+        <div style={{ marginTop: 6 }}>
+          <p style={{ fontSize: '0.55rem', color: '#c90', margin: '0 0 3px', fontWeight: 'bold' }}>
+            Trophies
+          </p>
+          {char.trophies.map((t, i) => (
+            <div key={i} style={{
+              fontSize: '0.6rem', padding: '2px 5px', marginTop: 1,
+              background: 'rgba(204,153,0,0.06)', borderRadius: 3,
+              borderLeft: '2px solid #a80',
+            }}>
+              <span>🏆 {t.name}</span>
+              <span style={{ color: 'var(--text-muted)', marginLeft: 4 }}>
+                (+{t.combatBonus} combat, from {t.fromCharName})
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Vendettas */}
+      {!isDead && char.vendettas && char.vendettas.length > 0 && (
+        <div style={{ marginTop: 6 }}>
+          <p style={{ fontSize: '0.55rem', color: '#c44', margin: '0 0 3px', fontWeight: 'bold' }}>
+            Vendettas
+          </p>
+          {char.vendettas.map((v, i) => {
+            const targetName = worldState.characters[v.targetCharId]?.name ?? 'Unknown';
+            const targetDead = worldState.characters[v.targetCharId]?.status === 'dead';
+            return (
+              <div key={i} style={{
+                fontSize: '0.6rem', padding: '2px 5px', marginTop: 1,
+                background: 'rgba(200,60,60,0.06)', borderRadius: 3,
+                borderLeft: '2px solid #c44',
+                opacity: targetDead ? 0.5 : 1,
+                textDecoration: targetDead ? 'line-through' : 'none',
+              }}>
+                <span>🩸 vs {targetName}</span>
+                <span style={{ color: 'var(--text-muted)', marginLeft: 4 }}>
+                  — {v.reason}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Relationships */}
+      {!isDead && char.relationships && char.relationships.length > 0 && (
+        <div style={{ marginTop: 6 }}>
+          <p style={{ fontSize: '0.55rem', color: '#8af', margin: '0 0 3px', fontWeight: 'bold' }}>
+            Bonds
+          </p>
+          {char.relationships.map((r, i) => {
+            const targetName = worldState.characters[r.targetCharId]?.name ?? 'Unknown';
+            const targetDead = worldState.characters[r.targetCharId]?.status === 'dead';
+            const typeIcons: Record<string, string> = {
+              mentor: '📖', protege: '🌱', rival: '⚡', blood_oath: '🩸', nemesis: '💀',
+            };
+            const typeColors: Record<string, string> = {
+              mentor: '#4a8', protege: '#4a8', rival: '#c84', blood_oath: '#c4c', nemesis: '#c44',
+            };
+            return (
+              <div key={i} style={{
+                fontSize: '0.6rem', padding: '2px 5px', marginTop: 1,
+                background: `${typeColors[r.type] ?? '#888'}11`, borderRadius: 3,
+                borderLeft: `2px solid ${typeColors[r.type] ?? '#888'}`,
+                opacity: targetDead ? 0.6 : 1,
+              }}>
+                <span>{typeIcons[r.type] ?? '●'} {r.type.replace('_', ' ')}: {targetName}</span>
+                {targetDead && <span style={{ color: '#8a4444', marginLeft: 4 }}>(fallen)</span>}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -204,6 +289,7 @@ export default function CharacterPanel({ worldState, selectedFactionId }: Props)
           char={char}
           factionName={worldState.factions[char.factionId]?.name ?? 'Unknown'}
           currentTurn={worldState.turn}
+          worldState={worldState}
         />
       ))}
     </div>

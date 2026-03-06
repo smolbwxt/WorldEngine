@@ -144,6 +144,50 @@ const STATE_FRAGMENTS: Array<{
       'Too many empty chairs at war councils. This conflict has claimed its share of leaders.',
     ],
   },
+  {
+    condition: (s) => {
+      return Object.values(s.characters ?? {}).some(
+        c => c.status !== 'dead' && c.vendettas && c.vendettas.length > 0
+      );
+    },
+    fragments: [
+      'Blood debts remain unpaid. The living sharpen their blades and wait.',
+      'Vendettas crisscross the realm like cracks in glass. One more blow and something shatters.',
+    ],
+  },
+  {
+    condition: (s) => {
+      return Object.values(s.characters ?? {}).some(
+        c => c.status !== 'dead' && c.trophies && c.trophies.length >= 2
+      );
+    },
+    fragments: [
+      'Some warriors carry the relics of the fallen. Each trophy tells a story of victory and loss.',
+      'Grim trophies change hands. The strong inherit the legacy of the dead.',
+    ],
+  },
+  {
+    condition: (s) => {
+      return Object.values(s.characters ?? {}).some(
+        c => c.activeSince >= s.turn - 4 && c.traits.includes('untested')
+      );
+    },
+    fragments: [
+      'New leaders rise from the ashes of the old. Whether they will prove worthy remains to be seen.',
+      'Succession brings uncertainty. The old guard is gone — what comes next is anyone\'s guess.',
+    ],
+  },
+  {
+    condition: (s) => {
+      return Object.values(s.characters ?? {}).some(
+        c => c.relationships && c.relationships.some(r => r.type === 'blood_oath')
+      );
+    },
+    fragments: [
+      'Blood oaths bind warriors across faction lines. Personal honor runs deeper than politics.',
+      'Some bonds transcend allegiance. In a world of betrayal, a sworn oath still means something.',
+    ],
+  },
 ];
 
 /** Conflict-specific narrative fragments */

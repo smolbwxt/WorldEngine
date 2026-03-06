@@ -1,4 +1,4 @@
-import type { Character, CharacterAbility, WorldState, WorldEvent, Faction, CombatResult } from './types.js';
+import type { Character, CharacterAbility, CharacterRelationship, CharacterRole, WorldState, WorldEvent, Faction, CombatResult } from './types.js';
 import type { SeededRNG } from './rng.js';
 import { clamp } from './world-state.js';
 
@@ -38,7 +38,7 @@ export function getCharacterAtLocation(
 }
 
 /** Calculate combat bonus from a character present at battle */
-export function getCharacterCombatBonus(char: Character): number {
+export function getCharacterCombatBonus(char: Character, opponentChar?: Character | null): number {
   let bonus = Math.floor(char.prowess / 3); // base from prowess (1-3)
 
   for (const ability of char.abilities) {
@@ -50,6 +50,15 @@ export function getCharacterCombatBonus(char: Character): number {
   // Renown bonus: famous leaders inspire troops
   if (char.renown > 60) bonus += 1;
   if (char.renown > 80) bonus += 1;
+
+  // Trophy bonus
+  bonus += getTrophyBonus(char);
+
+  // Vendetta & relationship bonuses against specific opponent
+  if (opponentChar) {
+    bonus += getVendettaBonus(char, opponentChar.id);
+    bonus += getRelationshipCombatModifier(char, opponentChar.id);
+  }
 
   return bonus;
 }
@@ -840,6 +849,738 @@ export function rollCharacterProgression(
     consequences: [],
     hookPotential: 3,
   });
+
+  return events;
+}
+
+// ============================================================
+// Rivalries & Vendettas
+//
+// When a character kills another in battle, surviving faction
+// members gain a vendetta against the killer. +2 combat bonus
+// when fighting that specific character.
+// ============================================================
+
+/**
+ * Create vendettas when a character is killed by another character.
+ * All living members of the victim's faction get a vendetta.
+ */
+export function createVendettas(
+  victim: Character,
+  killer: Character,
+  state: WorldState,
+  locationName: string,
+): WorldEvent[] {
+  const events: WorldEvent[] = [];
+  const faction = state.factions[victim.factionId];
+  if (!faction) return events;
+
+  // All living faction members swear vengeance
+  const factionMembers = getFactionCharacters(victim.factionId, state)
+    .filter(c => c.id !== victim.id);
+
+  for (const member of factionMembers) {
+    if (!member.vendettas) member.vendettas = [];
+    // Don't stack vendettas against the same killer
+    if (member.vendettas.some(v => v.targetCharId === killer.id)) continue;
+    member.vendettas.push({
+      targetCharId: killer.id,
+      reason: `killed ${victim.name} at ${locationName}`,
+      createdTurn: state.turn,
+    });
+  }
+
+  // The killer also gets a kill trophy (handled in trophies section)
+  killer.killCount++;
+
+  if (factionMembers.length > 0) {
+    events.push({
+      id: `vendetta_${victim.id}_${killer.id}_t${state.turn}`,
+      turn: state.turn,
+      season: state.season,
+      year: state.year,
+      type: 'story_hook',
+      text: `${faction.name} swears vengeance on ${killer.name} for the death of ${victim.name}. The blood debt must be paid.`,
+      icon: '🩸',
+      factionId: victim.factionId,
+      locationId: victim.locationId,
+      consequences: [`${factionMembers.length} character(s) now hold a vendetta against ${killer.name}`],
+      hookPotential: 4,
+    });
+  }
+
+  return events;
+}
+
+/** Get vendetta combat bonus against a specific opponent */
+export function getVendettaBonus(char: Character, opponentId: string): number {
+  if (!char.vendettas) return 0;
+  return char.vendettas.some(v => v.targetCharId === opponentId) ? 2 : 0;
+}
+
+// ============================================================
+// Legendary Last Stands
+//
+// When a character dies in battle, they roll for a last stand.
+// High prowess + renown = chance to go out in a blaze of glory,
+// inflicting extra casualties or even flipping the battle outcome.
+// ============================================================
+
+/**
+ * Roll a last stand when a character dies in battle.
+ * Returns extra casualties and whether the battle flips.
+ */
+export function rollLastStand(
+  char: Character,
+  rng: SeededRNG,
+): { extraCasualties: number; flippedBattle: boolean; narrative: string } | null {
+  // Only warriors get last stands — not advisors or diplomats
+  if (char.role === 'advisor' || char.role === 'diplomat') return null;
+
+  // Check: prowess + renown/10. Need at least 10 to have a chance.
+  const lastStandScore = char.prowess + Math.floor(char.renown / 10);
+  if (lastStandScore < 10) return null;
+
+  // Chance: 20% base + 3% per point above 10
+  const chance = 0.20 + (lastStandScore - 10) * 0.03;
+  if (!rng.chance(chance)) return null;
+
+  // Determine magnitude
+  const isLegendary = lastStandScore >= 16 && rng.chance(0.25);
+  const extraCasualties = isLegendary
+    ? Math.floor(char.prowess * 3)
+    : Math.floor(char.prowess * 1.5);
+
+  const flippedBattle = isLegendary && rng.chance(0.3);
+
+  const narratives = isLegendary ? [
+    `${char.name} made their last stand — a fury of steel and defiance that will be sung about for generations. They took dozens with them before falling.`,
+    `${char.name} fought like a cornered god. The enemy paid dearly for their death. Legends are born of moments like this.`,
+    `"NONE OF YOU ARE WORTHY!" ${char.name} roared, and proved it. Their last stand carved a wound in the enemy that will never heal.`,
+  ] : [
+    `${char.name} didn't go quietly. They fought to the last breath, taking enemies with them into the dark.`,
+    `${char.name}'s final moments were a storm of fury. Surrounded and doomed, they refused to kneel.`,
+    `${char.name} died with a blade in each hand and defiance in their eyes. Their killers will remember.`,
+  ];
+
+  const narrative = rng.pick(narratives);
+
+  return {
+    extraCasualties,
+    flippedBattle,
+    narrative: flippedBattle
+      ? `${narrative} Their sacrifice turned the tide of battle itself!`
+      : narrative,
+  };
+}
+
+// ============================================================
+// Trophies & Relics
+//
+// Characters who kill a named character claim a trophy.
+// Trophies give a small permanent combat bonus and transfer
+// to whoever kills the trophy holder — creating chains.
+// ============================================================
+
+/**
+ * Award a trophy to the killer when they slay a named character.
+ */
+export function awardTrophy(
+  killer: Character,
+  victim: Character,
+  turn: number,
+): WorldEvent[] {
+  if (!killer.trophies) killer.trophies = [];
+
+  const trophyNames = [
+    `${victim.name}'s Skull`, `${victim.name}'s Blade`, `${victim.name}'s Banner`,
+    `${victim.name}'s Ring`, `${victim.name}'s Shield`, `${victim.name}'s Helm`,
+  ];
+
+  const trophy = {
+    name: trophyNames[Math.floor(Math.random() * trophyNames.length)],
+    fromCharId: victim.id,
+    fromCharName: victim.name,
+    gainedTurn: turn,
+    combatBonus: 1,
+  };
+
+  killer.trophies.push(trophy);
+
+  // Transfer victim's trophies to the killer (chain of ownership)
+  if (victim.trophies && victim.trophies.length > 0) {
+    killer.trophies.push(...victim.trophies);
+    victim.trophies = [];
+  }
+
+  return [{
+    id: `trophy_${killer.id}_${victim.id}_t${turn}`,
+    turn,
+    season: 'Spring', // will be overwritten by caller
+    year: 0,
+    type: 'story_hook',
+    text: `${killer.name} claims ${trophy.name} as a trophy. ${victim.trophies?.length ? `They also inherit ${victim.name}'s collected relics.` : 'A grim souvenir of victory.'}`,
+    icon: '🏆',
+    factionId: killer.factionId,
+    locationId: killer.locationId,
+    consequences: [`${killer.name} gains +1 combat from trophy`],
+    hookPotential: 3,
+  }];
+}
+
+/** Get total trophy combat bonus */
+export function getTrophyBonus(char: Character): number {
+  if (!char.trophies) return 0;
+  return char.trophies.reduce((sum, t) => sum + t.combatBonus, 0);
+}
+
+// ============================================================
+// Character Succession
+//
+// When a faction leader dies, a new character is generated.
+// The successor is weaker, and the faction suffers a loyalty
+// crisis during the transition.
+// ============================================================
+
+/** Name pools for generated successors */
+const SUCCESSOR_NAMES: Record<string, string[]> = {
+  aurelian_crown: ['Titus', 'Gaius', 'Lucius', 'Octavia', 'Marcus', 'Severus', 'Livia', 'Nero'],
+  house_valdris: ['Aldric II', 'Veena', 'Dorian', 'Lysandra', 'Caspian', 'Iriel'],
+  house_thorne: ['Cedric', 'Brynna', 'Gareth', 'Isolde', 'Edmund', 'Rowena'],
+  iron_fang: ['Rat', 'Thorn', 'Ash', 'Crow', 'Splinter', 'Dust', 'Nail'],
+  red_wolves: ['Knife', 'Whisper', 'Shadow', 'Ember', 'Rust', 'Viper'],
+  greentusk_horde: ['Narg', 'Blix', 'Zog', 'Grub', 'Snik', 'Thrak', 'Wort'],
+  silver_road_guild: ['Petra', 'Ambrose', 'Nira', 'Felix', 'Calista', 'Hugo'],
+  order_of_the_last_light: ['Brother Aldous', 'Sister Mira', 'Confessor Stern', 'Flame-Speaker Vel'],
+};
+
+const SUCCESSOR_TITLES: Record<string, string[]> = {
+  commander: ['Acting Commander', 'Interim Marshal', 'Field Captain'],
+  warchief: ['Aspiring Warchief', 'War-Caller', 'New Blood'],
+  champion: ['Rising Blade', 'Aspirant Champion', 'Eager Sword'],
+  spymaster: ['Shadow Apprentice', 'Eyes in the Dark', 'New Whisperer'],
+  diplomat: ['Junior Envoy', 'Apprentice Negotiator', 'New Voice'],
+  advisor: ['Inexperienced Counsel', 'Untested Advisor', 'Fresh Pen'],
+};
+
+/**
+ * Generate a successor character when a faction leader or key character dies.
+ * The successor is deliberately weaker — succession is costly.
+ */
+export function generateSuccessor(
+  deadChar: Character,
+  state: WorldState,
+  rng: SeededRNG,
+): { successor: Character; events: WorldEvent[] } {
+  const events: WorldEvent[] = [];
+  const faction = state.factions[deadChar.factionId];
+
+  // Pick a name from the faction's pool, avoiding duplicates
+  const namePool = SUCCESSOR_NAMES[deadChar.factionId] ?? ['Unknown Heir'];
+  const existingNames = new Set(Object.values(state.characters).map(c => c.name));
+  const availableNames = namePool.filter(n => !existingNames.has(n));
+  const name = availableNames.length > 0 ? rng.pick(availableNames) : `${rng.pick(namePool)} the Younger`;
+
+  const titlePool = SUCCESSOR_TITLES[deadChar.role] ?? ['Untested Leader'];
+  const title = rng.pick(titlePool);
+
+  // Stats: 60-80% of the predecessor, randomized
+  const statScale = () => Math.max(1, rng.int(4, 7));
+  const prowess = clamp(statScale(), 1, Math.max(3, deadChar.prowess - 1));
+  const cunning = clamp(statScale(), 1, Math.max(3, deadChar.cunning - 1));
+  const authority = clamp(statScale(), 1, Math.max(3, deadChar.authority - 1));
+
+  const id = `${name.toLowerCase().replace(/[^a-z0-9]/g, '_')}_t${state.turn}`;
+
+  const successor: Character = {
+    id,
+    name,
+    title,
+    role: deadChar.role,
+    factionId: deadChar.factionId,
+    locationId: deadChar.locationId,
+    prowess,
+    cunning,
+    authority,
+    status: 'active',
+    renown: 5,
+    loyalty: rng.int(50, 80), // loyalty crisis — new leader hasn't earned trust
+    woundedUntilTurn: 0,
+    activeSince: state.turn,
+    description: `Successor to the fallen ${deadChar.name}. Untested and uncertain, but fate has thrust them into a role they may not be ready for.`,
+    traits: ['untested', 'in-the-shadow-of-greatness'],
+    abilities: [],
+    killCount: 0,
+    battlesWon: 0,
+    battlesLost: 0,
+    timesWounded: 0,
+    titleHistory: [],
+    vendettas: [],
+    trophies: [],
+    relationships: [],
+  };
+
+  // Inherit a vendetta for the predecessor's killer
+  if (deadChar.deathCause?.includes('Killed') || deadChar.deathCause?.includes('Assassinated')) {
+    // The successor naturally wants revenge
+    successor.traits.push('vengeance-driven');
+  }
+
+  // Faction loyalty crisis
+  if (faction) {
+    faction.morale = clamp(faction.morale - 5, 0, 100); // additional morale hit beyond death
+    if (faction.leader === deadChar.name) {
+      faction.leader = name;
+    }
+  }
+
+  events.push({
+    id: `succession_${id}_t${state.turn}`,
+    turn: state.turn,
+    season: state.season,
+    year: state.year,
+    type: 'story_hook',
+    text: `${name} rises as ${title}, successor to the fallen ${deadChar.name}. ${faction?.name ?? 'The faction'} enters a period of uncertainty.`,
+    icon: '👑',
+    factionId: deadChar.factionId,
+    locationId: deadChar.locationId,
+    consequences: [
+      `New ${deadChar.role} for ${faction?.name ?? 'faction'}`,
+      `Loyalty crisis: morale -5`,
+      `${name}: PRW ${prowess} / CUN ${cunning} / AUT ${authority}`,
+    ],
+    hookPotential: 5,
+  });
+
+  return { successor, events };
+}
+
+// ============================================================
+// War Council Events
+//
+// When 2+ characters from the same faction are at the same
+// location, special council events can trigger — combined
+// abilities, unique strategies, or internal power struggles.
+// ============================================================
+
+/**
+ * Check for war councils — multiple characters at the same location.
+ * Called once per turn during the character phase.
+ */
+export function processWarCouncils(
+  state: WorldState,
+  rng: SeededRNG,
+): WorldEvent[] {
+  const events: WorldEvent[] = [];
+
+  // Group characters by (faction, location)
+  const groups = new Map<string, Character[]>();
+  for (const char of Object.values(state.characters)) {
+    if (char.status !== 'active') continue;
+    const key = `${char.factionId}::${char.locationId}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(char);
+  }
+
+  for (const [key, chars] of groups) {
+    if (chars.length < 2) continue;
+
+    // 25% chance per turn to trigger a council event
+    if (!rng.chance(0.25)) continue;
+
+    const [factionId, locationId] = key.split('::');
+    const faction = state.factions[factionId];
+    const location = state.locations[locationId];
+    if (!faction || !location) continue;
+
+    // Determine council type based on who's present
+    const hasRival = chars.some(c =>
+      c.relationships?.some(r =>
+        r.type === 'rival' && chars.some(o => o.id === r.targetCharId)
+      )
+    );
+
+    const councilRoll = rng.int(0, 100) / 100;
+
+    if (hasRival && councilRoll < 0.35) {
+      // Internal power struggle
+      const rivals = chars.filter(c =>
+        c.relationships?.some(r => r.type === 'rival')
+      );
+      const leader = rivals.length > 0 ? rng.pick(rivals) : rng.pick(chars);
+      const challenger = chars.find(c => c.id !== leader.id) ?? chars[1];
+
+      // Authority contest
+      const leaderRoll = rng.d20() + leader.authority;
+      const challengerRoll = rng.d20() + challenger.authority;
+
+      if (challengerRoll > leaderRoll) {
+        // Challenger wins — morale dip but new energy
+        leader.renown = clamp(leader.renown - 5, 0, 100);
+        challenger.renown = clamp(challenger.renown + 5, 0, 100);
+        events.push({
+          id: `council_struggle_${factionId}_t${state.turn}`,
+          turn: state.turn,
+          season: state.season,
+          year: state.year,
+          type: 'story_hook',
+          text: `At a war council in ${location.name}, ${challenger.name} openly challenges ${leader.name}'s authority. The confrontation shakes ${faction.name}'s leadership.`,
+          icon: '🏛️',
+          factionId,
+          locationId,
+          consequences: [
+            `${challenger.name} renown +5`,
+            `${leader.name} renown -5`,
+          ],
+          hookPotential: 4,
+        });
+      } else {
+        // Leader holds — faction unity reinforced
+        faction.morale = clamp(faction.morale + 3, 0, 100);
+        events.push({
+          id: `council_unity_${factionId}_t${state.turn}`,
+          turn: state.turn,
+          season: state.season,
+          year: state.year,
+          type: 'story_hook',
+          text: `${leader.name} asserts authority at the war council in ${location.name}. ${faction.name} stands united — for now.`,
+          icon: '🏛️',
+          factionId,
+          locationId,
+          consequences: [`${faction.name} morale +3`],
+          hookPotential: 3,
+        });
+      }
+    } else if (councilRoll < 0.65) {
+      // Combined strategy bonus — faction gets a temporary boost
+      const totalProwess = chars.reduce((s, c) => s + c.prowess, 0);
+      const totalCunning = chars.reduce((s, c) => s + c.cunning, 0);
+
+      if (totalProwess > totalCunning) {
+        // Martial council — power boost
+        const boost = Math.floor(chars.length * 2);
+        faction.power = clamp(faction.power + boost, 0, faction.maxPower);
+        events.push({
+          id: `council_martial_${factionId}_t${state.turn}`,
+          turn: state.turn,
+          season: state.season,
+          year: state.year,
+          type: 'story_hook',
+          text: `${chars.map(c => c.name).join(' and ')} hold a war council at ${location.name}. Their combined tactical expertise strengthens ${faction.name}'s forces.`,
+          icon: '⚔️',
+          factionId,
+          locationId,
+          consequences: [`${faction.name} power +${boost}`],
+          hookPotential: 3,
+        });
+      } else {
+        // Intelligence council — gold/info boost
+        const goldBoost = Math.floor(chars.length * 8);
+        faction.gold += goldBoost;
+        events.push({
+          id: `council_intel_${factionId}_t${state.turn}`,
+          turn: state.turn,
+          season: state.season,
+          year: state.year,
+          type: 'story_hook',
+          text: `${chars.map(c => c.name).join(' and ')} share intelligence at ${location.name}. Their combined networks reveal opportunities for ${faction.name}.`,
+          icon: '🕵️',
+          factionId,
+          locationId,
+          consequences: [`${faction.name} gold +${goldBoost}`],
+          hookPotential: 3,
+        });
+      }
+    } else {
+      // Mentorship/bonding — strengthens relationships
+      const mentor = chars.reduce((a, b) => {
+        const aExp = a.battlesWon + a.battlesLost + (a.timesWounded ?? 0);
+        const bExp = b.battlesWon + b.battlesLost + (b.timesWounded ?? 0);
+        return aExp >= bExp ? a : b;
+      });
+      const protege = chars.find(c => c.id !== mentor.id) ?? chars[1];
+
+      // Protege gains a small stat point
+      const statChoice = rng.int(0, 100) / 100;
+      let statName = '';
+      if (statChoice < 0.33 && protege.prowess < 10) {
+        protege.prowess++;
+        statName = 'prowess';
+      } else if (statChoice < 0.66 && protege.cunning < 10) {
+        protege.cunning++;
+        statName = 'cunning';
+      } else if (protege.authority < 10) {
+        protege.authority++;
+        statName = 'authority';
+      }
+
+      if (statName) {
+        events.push({
+          id: `council_mentor_${factionId}_t${state.turn}`,
+          turn: state.turn,
+          season: state.season,
+          year: state.year,
+          type: 'story_hook',
+          text: `${mentor.name} takes time to counsel ${protege.name} at ${location.name}. The younger warrior learns from hard-won experience.`,
+          icon: '📖',
+          factionId,
+          locationId,
+          consequences: [`${protege.name} ${statName} +1`],
+          hookPotential: 3,
+        });
+      }
+    }
+  }
+
+  return events;
+}
+
+// ============================================================
+// Character Relationships
+//
+// Personal bonds between characters: mentor/protégé, rivals,
+// nemeses, and blood oaths. Created by proximity, shared
+// battles, and dramatic events.
+// ============================================================
+
+/**
+ * Process relationship formation and effects each turn.
+ * Relationships form organically from shared experiences.
+ */
+export function processRelationships(
+  state: WorldState,
+  rng: SeededRNG,
+): WorldEvent[] {
+  const events: WorldEvent[] = [];
+  const living = Object.values(state.characters).filter(c => c.status !== 'dead');
+
+  for (const char of living) {
+    if (!char.relationships) char.relationships = [];
+
+    // 10% chance per turn to form a new relationship
+    if (!rng.chance(0.10)) continue;
+
+    // Limit relationships per character
+    if (char.relationships.length >= 4) continue;
+
+    const existingTargets = new Set(char.relationships.map(r => r.targetCharId));
+
+    // --- Mentor/Protégé within faction
+    const factionMates = living.filter(c =>
+      c.id !== char.id &&
+      c.factionId === char.factionId &&
+      !existingTargets.has(c.id)
+    );
+
+    if (factionMates.length > 0 && rng.chance(0.4)) {
+      const mate = rng.pick(factionMates);
+      const charExp = char.battlesWon + char.battlesLost + (char.timesWounded ?? 0);
+      const mateExp = mate.battlesWon + mate.battlesLost + (mate.timesWounded ?? 0);
+
+      if (charExp >= mateExp + 3) {
+        // Char becomes mentor
+        addRelationship(char, mate, 'mentor', `Took ${mate.name} under their wing`, state.turn);
+        addRelationship(mate, char, 'protege', `Learning from ${char.name}`, state.turn);
+        events.push(makeRelationshipEvent(
+          `${char.name} has taken ${mate.name} as a protégé. The veteran shares hard-won wisdom.`,
+          '📖', char, state
+        ));
+        continue;
+      } else if (mateExp >= charExp + 3) {
+        addRelationship(mate, char, 'mentor', `Took ${char.name} under their wing`, state.turn);
+        addRelationship(char, mate, 'protege', `Learning from ${mate.name}`, state.turn);
+        events.push(makeRelationshipEvent(
+          `${mate.name} has taken ${char.name} as a protégé. The old guard trains the new.`,
+          '📖', char, state
+        ));
+        continue;
+      }
+
+      // Similar experience → rivalry (if at same location)
+      if (char.locationId === mate.locationId && Math.abs(charExp - mateExp) <= 2) {
+        addRelationship(char, mate, 'rival', `Competes with ${mate.name} for standing`, state.turn);
+        addRelationship(mate, char, 'rival', `Competes with ${char.name} for standing`, state.turn);
+        events.push(makeRelationshipEvent(
+          `A rivalry brews between ${char.name} and ${mate.name}. Both seek to prove their worth to ${state.factions[char.factionId]?.name ?? 'the faction'}.`,
+          '⚡', char, state
+        ));
+        continue;
+      }
+    }
+
+    // --- Blood oath across factions (rare, requires shared location + positive relations)
+    if (rng.chance(0.15)) {
+      const crossFactionCandidates = living.filter(c =>
+        c.id !== char.id &&
+        c.factionId !== char.factionId &&
+        c.locationId === char.locationId &&
+        !existingTargets.has(c.id)
+      );
+
+      if (crossFactionCandidates.length > 0) {
+        const factionA = state.factions[char.factionId];
+        const candidate = rng.pick(crossFactionCandidates);
+        const factionB = state.factions[candidate.factionId];
+
+        // Only form blood oaths between allied or neutral factions
+        const relation = factionA?.relationships[candidate.factionId] ?? 0;
+        if (relation >= 0) {
+          addRelationship(char, candidate, 'blood_oath', `Swore a blood oath with ${candidate.name}`, state.turn);
+          addRelationship(candidate, char, 'blood_oath', `Swore a blood oath with ${char.name}`, state.turn);
+          events.push({
+            id: `blood_oath_${char.id}_${candidate.id}_t${state.turn}`,
+            turn: state.turn,
+            season: state.season,
+            year: state.year,
+            type: 'story_hook',
+            text: `${char.name} and ${candidate.name} swear a blood oath at ${state.locations[char.locationId]?.name ?? 'an unknown place'}. Whatever their factions decide, these two are bound by something deeper.`,
+            icon: '🩸',
+            factionId: char.factionId,
+            locationId: char.locationId,
+            consequences: [`Personal bond between ${factionA?.name ?? '?'} and ${factionB?.name ?? '?'}`],
+            hookPotential: 4,
+          });
+        }
+      }
+    }
+
+    // --- Nemesis from vendetta escalation
+    if (char.vendettas && char.vendettas.length > 0 && rng.chance(0.2)) {
+      const vendetta = rng.pick(char.vendettas);
+      const target = state.characters[vendetta.targetCharId];
+      if (target && target.status !== 'dead' && !existingTargets.has(target.id)) {
+        addRelationship(char, target, 'nemesis', `Sworn enemy — ${vendetta.reason}`, state.turn);
+        events.push(makeRelationshipEvent(
+          `${char.name} has declared ${target.name} their nemesis. This is personal now.`,
+          '💀', char, state
+        ));
+      }
+    }
+  }
+
+  return events;
+}
+
+function addRelationship(
+  char: Character,
+  target: Character,
+  type: CharacterRelationship['type'],
+  description: string,
+  turn: number,
+): void {
+  if (!char.relationships) char.relationships = [];
+  char.relationships.push({
+    targetCharId: target.id,
+    type,
+    createdTurn: turn,
+    description,
+  });
+}
+
+function makeRelationshipEvent(
+  text: string,
+  icon: string,
+  char: Character,
+  state: WorldState,
+): WorldEvent {
+  return {
+    id: `relationship_${char.id}_t${state.turn}_${Math.random().toString(36).slice(2, 6)}`,
+    turn: state.turn,
+    season: state.season,
+    year: state.year,
+    type: 'story_hook',
+    text,
+    icon,
+    factionId: char.factionId,
+    locationId: char.locationId,
+    consequences: [],
+    hookPotential: 3,
+  };
+}
+
+/**
+ * Get relationship combat bonus when two characters face each other.
+ * Nemesis gives +3, blood oath against oath-brother gives -2 (reluctance).
+ */
+export function getRelationshipCombatModifier(
+  char: Character,
+  opponentId: string,
+): number {
+  if (!char.relationships) return 0;
+  let mod = 0;
+  for (const rel of char.relationships) {
+    if (rel.targetCharId !== opponentId) continue;
+    if (rel.type === 'nemesis') mod += 3;
+    if (rel.type === 'blood_oath') mod -= 2; // reluctant to fight oath-brother
+  }
+  return mod;
+}
+
+/**
+ * Handle relationship consequences when a character dies.
+ * Protégé of a dead mentor gains rage bonus or morale collapse.
+ */
+export function processRelationshipDeathEffects(
+  deadChar: Character,
+  state: WorldState,
+  rng: SeededRNG,
+): WorldEvent[] {
+  const events: WorldEvent[] = [];
+  const living = Object.values(state.characters).filter(c => c.status !== 'dead');
+
+  for (const char of living) {
+    if (!char.relationships) continue;
+
+    for (const rel of char.relationships) {
+      if (rel.targetCharId !== deadChar.id) continue;
+
+      if (rel.type === 'protege') {
+        // Mentor died — protégé either rages or collapses
+        if (rng.chance(0.6)) {
+          // Rage: prowess boost + trait
+          char.prowess = clamp(char.prowess + 1, 1, 10);
+          if (!char.traits.includes('grief-fueled')) char.traits.push('grief-fueled');
+          events.push(makeRelationshipEvent(
+            `${char.name} burns with fury at the death of their mentor ${deadChar.name}. Grief becomes a weapon.`,
+            '🔥', char, state
+          ));
+        } else {
+          // Collapse: morale + authority hit
+          char.authority = clamp(char.authority - 1, 1, 10);
+          if (!char.traits.includes('lost')) char.traits.push('lost');
+          const faction = state.factions[char.factionId];
+          if (faction) faction.morale = clamp(faction.morale - 3, 0, 100);
+          events.push(makeRelationshipEvent(
+            `${char.name} is shaken by the loss of their mentor ${deadChar.name}. The certainty they once felt is gone.`,
+            '💔', char, state
+          ));
+        }
+      }
+
+      if (rel.type === 'mentor') {
+        // Protégé died — mentor gains sorrow trait
+        if (!char.traits.includes('lost-a-protégé')) char.traits.push('lost-a-protégé');
+        events.push(makeRelationshipEvent(
+          `${char.name} mourns ${deadChar.name}, the protégé they couldn't save. Some losses cut deeper than wounds.`,
+          '💔', char, state
+        ));
+      }
+
+      if (rel.type === 'blood_oath') {
+        // Oath-brother died — sworn to avenge
+        if (!char.vendettas) char.vendettas = [];
+        // Add vendettas against all enemies of the dead character's faction
+        char.traits.push('oath-bound-grief');
+        events.push(makeRelationshipEvent(
+          `${char.name}'s blood oath with ${deadChar.name} remains — even in death. The bond demands vengeance.`,
+          '🩸', char, state
+        ));
+      }
+    }
+
+    // Clean up relationships with dead characters (except for memory)
+    // We keep them for narrative purposes but mark them implicitly by the target being dead
+  }
 
   return events;
 }

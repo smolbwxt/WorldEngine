@@ -17,6 +17,13 @@ import {
   updateCharacterRenown,
   getFactionMoraleBonus,
   rollCharacterProgression,
+  createVendettas,
+  rollLastStand,
+  awardTrophy,
+  generateSuccessor,
+  processWarCouncils,
+  processRelationships,
+  processRelationshipDeathEffects,
 } from './characters.js';
 import { generateNarrativeRecap } from './narrative.js';
 import type { SimulationConfig } from './config.js';
@@ -100,8 +107,24 @@ export function resolveTurn(state: WorldState, config: SimulationConfig = DEFAUL
 
     // Non-combat perils — assassination, illness, accidents
     for (const char of Object.values(state.characters)) {
-      events.push(...rollNonCombatPerils(char, state, rng));
+      const perilEvents = rollNonCombatPerils(char, state, rng);
+      events.push(...perilEvents);
+      // Handle succession for non-combat deaths
+      if (char.status === 'dead' && char.deathTurn === state.turn) {
+        events.push(...processRelationshipDeathEffects(char, state, rng));
+        if (state.factions[char.factionId]?.leader === char.name) {
+          const { successor, events: succEvents } = generateSuccessor(char, state, rng);
+          state.characters[successor.id] = successor;
+          events.push(...succEvents);
+        }
+      }
     }
+
+    // War council events — multiple characters at same location
+    events.push(...processWarCouncils(state, rng));
+
+    // Relationship formation and evolution
+    events.push(...processRelationships(state, rng));
 
     // Character progression — surviving characters gain traits, abilities, stat boosts
     for (const char of Object.values(state.characters)) {
@@ -251,6 +274,16 @@ function executeFactionAction(
           if (!survival.survived) {
             events.push(...applyCharacterDeath(raiderChar, `Killed raiding ${target.name}`, state.turn, state));
             raidCharConsequences.push(survival.narrative);
+            if (defenderChar && defenderChar.status !== 'dead') {
+              events.push(...createVendettas(raiderChar, defenderChar, state, target.name));
+              events.push(...awardTrophy(defenderChar, raiderChar, state.turn));
+            }
+            events.push(...processRelationshipDeathEffects(raiderChar, state, rng));
+            if (state.factions[raiderChar.factionId]?.leader === raiderChar.name) {
+              const { successor, events: succEvents } = generateSuccessor(raiderChar, state, rng);
+              state.characters[successor.id] = successor;
+              events.push(...succEvents);
+            }
           } else if (survival.wounded) {
             applyCharacterWound(raiderChar, state.turn);
             raidCharConsequences.push(survival.narrative);
@@ -263,6 +296,16 @@ function executeFactionAction(
           if (!survival.survived) {
             events.push(...applyCharacterDeath(defenderChar, `Killed when ${target.name} was raided`, state.turn, state));
             raidCharConsequences.push(survival.narrative);
+            if (raiderChar && raiderChar.status !== 'dead') {
+              events.push(...createVendettas(defenderChar, raiderChar, state, target.name));
+              events.push(...awardTrophy(raiderChar, defenderChar, state.turn));
+            }
+            events.push(...processRelationshipDeathEffects(defenderChar, state, rng));
+            if (state.factions[defenderChar.factionId]?.leader === defenderChar.name) {
+              const { successor, events: succEvents } = generateSuccessor(defenderChar, state, rng);
+              state.characters[successor.id] = successor;
+              events.push(...succEvents);
+            }
           } else if (survival.wounded) {
             applyCharacterWound(defenderChar, state.turn);
             raidCharConsequences.push(survival.narrative);
@@ -306,6 +349,12 @@ function executeFactionAction(
           if (!survival.survived) {
             events.push(...applyCharacterDeath(raiderChar, `Killed in failed raid on ${target.name}`, state.turn, state));
             raidCharConsequences.push(survival.narrative);
+            events.push(...processRelationshipDeathEffects(raiderChar, state, rng));
+            if (state.factions[raiderChar.factionId]?.leader === raiderChar.name) {
+              const { successor, events: succEvents } = generateSuccessor(raiderChar, state, rng);
+              state.characters[successor.id] = successor;
+              events.push(...succEvents);
+            }
           } else if (survival.wounded) {
             applyCharacterWound(raiderChar, state.turn);
             raidCharConsequences.push(survival.narrative);
@@ -555,15 +604,43 @@ function executeFactionAction(
         faction.power = clamp(faction.power - result.attackerLosses, 0, faction.maxPower);
         defender.power = clamp(defender.power - result.defenderLosses, 0, defender.maxPower);
 
-        // Character survival rolls and renown
+        // Character survival rolls, renown, and new systems
         const charConsequences: string[] = [];
         if (atkChar && state.characters) {
           const attackerWon = result.outcome === 'decisive_victory' || result.outcome === 'victory' || result.outcome === 'pyrrhic_victory';
           updateCharacterRenown(atkChar, attackerWon, result.outcome);
           const survival = rollCharacterSurvival(atkChar, result.outcome, true, rng);
           if (!survival.survived) {
+            // Last stand check
+            const lastStand = rollLastStand(atkChar, rng);
+            if (lastStand) {
+              atkChar.lastStand = lastStand;
+              charConsequences.push(lastStand.narrative);
+              defender.power = clamp(defender.power - lastStand.extraCasualties, 0, defender.maxPower);
+              if (lastStand.flippedBattle && !result.territoryChanged) {
+                result.territoryChanged = true;
+                defender.controlledLocations = defender.controlledLocations.filter(id => id !== target.id);
+                faction.controlledLocations.push(target.id);
+              }
+            }
             events.push(...applyCharacterDeath(atkChar, `Killed in battle at ${target.name}`, state.turn, state));
             charConsequences.push(survival.narrative);
+            // Vendetta + trophy if a defender character was responsible
+            if (defChar && defChar.status !== 'dead') {
+              events.push(...createVendettas(atkChar, defChar, state, target.name));
+              events.push(...awardTrophy(defChar, atkChar, state.turn));
+            }
+            // Relationship death effects
+            events.push(...processRelationshipDeathEffects(atkChar, state, rng));
+            // Succession
+            const factionChars = Object.values(state.characters).filter(
+              c => c.factionId === atkChar.factionId && c.status !== 'dead' && c.id !== atkChar.id
+            );
+            if (factionChars.length === 0 || state.factions[atkChar.factionId]?.leader === atkChar.name) {
+              const { successor, events: succEvents } = generateSuccessor(atkChar, state, rng);
+              state.characters[successor.id] = successor;
+              events.push(...succEvents);
+            }
           } else if (survival.wounded) {
             applyCharacterWound(atkChar, state.turn);
             charConsequences.push(survival.narrative);
@@ -574,8 +651,36 @@ function executeFactionAction(
           updateCharacterRenown(defChar, defenderWon, result.outcome);
           const survival = rollCharacterSurvival(defChar, result.outcome, false, rng);
           if (!survival.survived) {
+            // Last stand check
+            const lastStand = rollLastStand(defChar, rng);
+            if (lastStand) {
+              defChar.lastStand = lastStand;
+              charConsequences.push(lastStand.narrative);
+              faction.power = clamp(faction.power - lastStand.extraCasualties, 0, faction.maxPower);
+              if (lastStand.flippedBattle && result.territoryChanged) {
+                result.territoryChanged = false;
+                faction.controlledLocations = faction.controlledLocations.filter(id => id !== target.id);
+                defender.controlledLocations.push(target.id);
+              }
+            }
             events.push(...applyCharacterDeath(defChar, `Killed defending ${target.name}`, state.turn, state));
             charConsequences.push(survival.narrative);
+            // Vendetta + trophy if attacker was responsible
+            if (atkChar && atkChar.status !== 'dead') {
+              events.push(...createVendettas(defChar, atkChar, state, target.name));
+              events.push(...awardTrophy(atkChar, defChar, state.turn));
+            }
+            // Relationship death effects
+            events.push(...processRelationshipDeathEffects(defChar, state, rng));
+            // Succession
+            const defFactionChars = Object.values(state.characters).filter(
+              c => c.factionId === defChar.factionId && c.status !== 'dead' && c.id !== defChar.id
+            );
+            if (defFactionChars.length === 0 || state.factions[defChar.factionId]?.leader === defChar.name) {
+              const { successor, events: succEvents } = generateSuccessor(defChar, state, rng);
+              state.characters[successor.id] = successor;
+              events.push(...succEvents);
+            }
           } else if (survival.wounded) {
             applyCharacterWound(defChar, state.turn);
             charConsequences.push(survival.narrative);
@@ -830,6 +935,22 @@ function generateDMBrief(state: WorldState, events: WorldEvent[]): string {
       }
       for (const e of progressionEvents) {
         lines.push(`  GREW: ${e.text}`);
+      }
+      const vendettaEvents = events.filter(e => e.id.startsWith('vendetta_'));
+      for (const e of vendettaEvents) {
+        lines.push(`  VENDETTA: ${e.text}`);
+      }
+      const successionEvents = events.filter(e => e.id.startsWith('succession_'));
+      for (const e of successionEvents) {
+        lines.push(`  SUCCESSION: ${e.text}`);
+      }
+      const councilEvents = events.filter(e => e.id.startsWith('council_'));
+      for (const e of councilEvents) {
+        lines.push(`  COUNCIL: ${e.text}`);
+      }
+      const relationshipEvents = events.filter(e => e.id.startsWith('relationship_') || e.id.startsWith('blood_oath_'));
+      for (const e of relationshipEvents) {
+        lines.push(`  BOND: ${e.text}`);
       }
     }
   }

@@ -17,9 +17,9 @@ export function resolveCombat(
     f.morale > cc.highMoraleThreshold ? cc.moraleModifier :
     f.morale < cc.lowMoraleThreshold ? -cc.moraleModifier : 0;
 
-  // Character combat bonuses
-  const attackerCharBonus = attackerChar ? getCharacterCombatBonus(attackerChar) : 0;
-  const defenderCharBonus = defenderChar ? getCharacterCombatBonus(defenderChar) : 0;
+  // Character combat bonuses (including vendetta/trophy/relationship bonuses)
+  const attackerCharBonus = attackerChar ? getCharacterCombatBonus(attackerChar, defenderChar) : 0;
+  const defenderCharBonus = defenderChar ? getCharacterCombatBonus(defenderChar, attackerChar) : 0;
 
   const attackerRoll =
     rng.d20() +

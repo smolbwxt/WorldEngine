@@ -221,6 +221,34 @@ export interface CharacterAbility {
   gainedTurn?: number;   // turn when this ability was earned (undefined = starting ability)
 }
 
+export interface CharacterVendetta {
+  targetCharId: string;   // the character they want dead
+  reason: string;         // e.g. "killed Ser Roland at Thornefield"
+  createdTurn: number;
+}
+
+export interface CharacterTrophy {
+  name: string;           // e.g. "Grak's Skull"
+  fromCharId: string;     // the dead character this came from
+  fromCharName: string;
+  gainedTurn: number;
+  combatBonus: number;    // typically 1
+}
+
+export type RelationshipType =
+  | 'mentor'       // older character teaches younger
+  | 'protege'      // younger character learns from older
+  | 'rival'        // intra-faction rivalry
+  | 'blood_oath'   // cross-faction sworn bond
+  | 'nemesis';     // sworn enemy (personal, not faction)
+
+export interface CharacterRelationship {
+  targetCharId: string;
+  type: RelationshipType;
+  createdTurn: number;
+  description: string;
+}
+
 export interface Character {
   id: string;
   name: string;
@@ -254,6 +282,18 @@ export interface Character {
   deathTurn?: number;
   deathCause?: string;
   titleHistory: string[]; // previous titles, most recent first
+
+  // Rivalries, trophies, relationships
+  vendettas: CharacterVendetta[];
+  trophies: CharacterTrophy[];
+  relationships: CharacterRelationship[];
+
+  // Last stand result (set on death in battle)
+  lastStand?: {
+    extraCasualties: number;
+    flippedBattle: boolean;
+    narrative: string;
+  };
 }
 
 export interface CombatResult {
