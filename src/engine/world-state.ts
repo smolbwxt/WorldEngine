@@ -1,7 +1,8 @@
-import type { WorldState, Faction, Location } from './types.js';
+import type { WorldState, Faction, Location, Character } from './types.js';
 import { SEASONS } from './types.js';
 import factionsData from '../data/factions.json';
 import locationsData from '../data/locations.json';
+import charactersData from '../data/characters.json';
 
 export function createInitialWorldState(seed?: number): WorldState {
   const factions: Record<string, Faction> = {};
@@ -14,12 +15,18 @@ export function createInitialWorldState(seed?: number): WorldState {
     locations[l.id] = { ...l };
   }
 
+  const characters: Record<string, Character> = {};
+  for (const c of charactersData as unknown as Character[]) {
+    characters[c.id] = { ...c, abilities: [...c.abilities] };
+  }
+
   return {
     turn: 0,
     year: 1,
     season: 'Spring',
     factions,
     locations,
+    characters,
     activeTreaties: [],
     eventLog: [],
     storyBeatsTriggered: [],

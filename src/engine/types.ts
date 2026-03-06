@@ -173,6 +173,7 @@ export interface WorldState {
   season: Season;
   factions: Record<string, Faction>;
   locations: Record<string, Location>;
+  characters: Record<string, Character>;
   activeTreaties: Treaty[];
   eventLog: WorldEvent[];
   storyBeatsTriggered: string[];
@@ -196,6 +197,60 @@ export type FactionAction =
   | { type: 'hire_mercenaries' }
   | { type: 'propose_treaty'; targetFactionId: string; treatyType: TreatyType; terms: Treaty['terms'] };
 
+// === Character / NPC System ===
+
+export type CharacterRole =
+  | 'commander'     // military leader — combat bonuses
+  | 'spymaster'     // intelligence — sabotage, scouting
+  | 'diplomat'      // negotiation — treaty bonuses
+  | 'champion'      // personal combatant — duels, morale
+  | 'advisor'       // governance — economy, corruption
+  | 'warchief';     // goblin/bandit leader — raid bonuses
+
+export type CharacterStatus = 'active' | 'wounded' | 'captured' | 'dead';
+
+export interface CharacterAbility {
+  id: string;
+  name: string;
+  description: string;
+  passive: boolean;      // always active vs triggered
+  combatBonus?: number;  // added to rolls when present
+  moraleBonus?: number;  // morale boost to faction
+  economyBonus?: number; // gold income multiplier
+}
+
+export interface Character {
+  id: string;
+  name: string;
+  title: string;
+  role: CharacterRole;
+  factionId: string;
+  locationId: string;     // current location
+
+  // Core stats (1-10 scale, like ability scores)
+  prowess: number;        // martial skill — combat rolls
+  cunning: number;        // subterfuge — raids, schemes, survival
+  authority: number;      // leadership — morale, diplomacy, governance
+
+  // State
+  status: CharacterStatus;
+  renown: number;         // 0-100, grows with victories
+  loyalty: number;        // 0-100, to their faction
+  woundedUntilTurn: number; // turn when wounds heal (0 = not wounded)
+
+  // Identity
+  description: string;
+  traits: string[];
+  abilities: CharacterAbility[];
+
+  // History
+  killCount: number;
+  battlesWon: number;
+  battlesLost: number;
+  deathTurn?: number;
+  deathCause?: string;
+}
+
 export interface CombatResult {
   attackerRoll: number;
   defenderRoll: number;
@@ -204,6 +259,9 @@ export interface CombatResult {
   attackerLosses: number;
   defenderLosses: number;
   territoryChanged: boolean;
+  // Character combat results
+  attackerCharacter?: { id: string; name: string; bonus: number; survived: boolean; deathNarrative?: string };
+  defenderCharacter?: { id: string; name: string; bonus: number; survived: boolean; deathNarrative?: string };
 }
 
 export interface EventTemplate {

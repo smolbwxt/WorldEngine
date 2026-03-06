@@ -6,6 +6,15 @@ import { decideFactionAction, getLocationController } from './factions.js';
 import { resolveRaid, resolveCombat } from './combat.js';
 import { processRandomEvents, processStoryHooks } from './events.js';
 import { decideTreatyProposal, evaluateTreatyProposal, executeTreaty } from './treaties.js';
+import {
+  processCharacterPhase,
+  getCharacterAtLocation,
+  rollCharacterSurvival,
+  applyCharacterDeath,
+  applyCharacterWound,
+  updateCharacterRenown,
+  getFactionMoraleBonus,
+} from './characters.js';
 import type { SimulationConfig } from './config.js';
 import { DEFAULT_CONFIG } from './config.js';
 
@@ -80,6 +89,20 @@ export function resolveTurn(state: WorldState, config: SimulationConfig = DEFAUL
 
   // 5. Consequence Phase — update relationships based on events
   processConsequences(state, events, rng, config);
+
+  // 5b. Character Phase — wound recovery, movement, morale bonuses
+  if (state.characters) {
+    events.push(...processCharacterPhase(state, rng));
+
+    // Apply passive morale bonuses from living characters
+    for (const faction of Object.values(state.factions)) {
+      const moraleBonus = getFactionMoraleBonus(faction.id, state);
+      if (moraleBonus > 0) {
+        // Apply a fraction each turn (not the full bonus — it's a persistent effect)
+        faction.morale = clamp(faction.morale + Math.floor(moraleBonus * 0.1), 0, 100);
+      }
+    }
+  }
 
   // 6. Random Events Phase
   events.push(...processRandomEvents(state, rng, config));
@@ -455,28 +478,72 @@ function executeFactionAction(
       if (!target) break;
       const defender = getLocationController(target.id, state);
       if (defender) {
-        const result = resolveCombat(faction, defender, target, rng, config);
+        // Find characters present at the battle
+        const atkChar = state.characters ? getCharacterAtLocation(faction.id, target.id, state)
+                        ?? getCharacterAtLocation(faction.id, faction.controlledLocations[0], state)
+                        : null;
+        const defChar = state.characters ? getCharacterAtLocation(defender.id, target.id, state) : null;
+
+        const result = resolveCombat(faction, defender, target, rng, config, atkChar, defChar);
         if (result.territoryChanged) {
           defender.controlledLocations = defender.controlledLocations.filter(id => id !== target.id);
           faction.controlledLocations.push(target.id);
         }
         faction.power = clamp(faction.power - result.attackerLosses, 0, faction.maxPower);
         defender.power = clamp(defender.power - result.defenderLosses, 0, defender.maxPower);
+
+        // Character survival rolls and renown
+        const charConsequences: string[] = [];
+        if (atkChar && state.characters) {
+          const attackerWon = result.outcome === 'decisive_victory' || result.outcome === 'victory' || result.outcome === 'pyrrhic_victory';
+          updateCharacterRenown(atkChar, attackerWon, result.outcome);
+          const survival = rollCharacterSurvival(atkChar, result.outcome, true, rng);
+          if (!survival.survived) {
+            events.push(...applyCharacterDeath(atkChar, `Killed in battle at ${target.name}`, state.turn, state));
+            charConsequences.push(survival.narrative);
+          } else if (survival.narrative) {
+            applyCharacterWound(atkChar, state.turn);
+            charConsequences.push(survival.narrative);
+          }
+        }
+        if (defChar && state.characters) {
+          const defenderWon = result.outcome === 'repelled' || result.outcome === 'routed';
+          updateCharacterRenown(defChar, defenderWon, result.outcome);
+          const survival = rollCharacterSurvival(defChar, result.outcome, false, rng);
+          if (!survival.survived) {
+            events.push(...applyCharacterDeath(defChar, `Killed defending ${target.name}`, state.turn, state));
+            charConsequences.push(survival.narrative);
+          } else if (survival.narrative) {
+            applyCharacterWound(defChar, state.turn);
+            charConsequences.push(survival.narrative);
+          }
+        }
+
+        // Build battle narrative with character involvement
+        const charText = atkChar || defChar ? (() => {
+          const parts: string[] = [];
+          if (atkChar) parts.push(`${atkChar.name} led the assault`);
+          if (defChar) parts.push(`${defChar.name} commanded the defense`);
+          return ' ' + parts.join('; ') + '.';
+        })() : '';
+
         events.push({
           id: `expand_${faction.id}_${target.id}_t${state.turn}`,
           turn: state.turn,
           season: state.season,
           year: state.year,
           type: 'battle',
-          text: result.territoryChanged
+          text: (result.territoryChanged
             ? `${faction.name} seizes ${target.name} from ${defender.name}! ${result.outcome.replace('_', ' ')}.`
-            : `${faction.name} attacks ${target.name} but fails to take it. ${result.outcome.replace('_', ' ')}.`,
+            : `${faction.name} attacks ${target.name} but fails to take it. ${result.outcome.replace('_', ' ')}.`)
+            + charText,
           icon: '⚔️',
           factionId: faction.id,
           locationId: target.id,
           consequences: [
             `${faction.name} losses: ${result.attackerLosses}`,
             `${defender.name} losses: ${result.defenderLosses}`,
+            ...charConsequences,
           ],
           hookPotential: 4,
         });
@@ -680,6 +747,24 @@ function generateDMBrief(state: WorldState, events: WorldEvent[]): string {
   for (const f of Object.values(state.factions)) {
     const status = f.power <= 5 ? '(CRITICAL)' : f.power <= 15 ? '(WEAK)' : '';
     lines.push(`  ${f.name}: Power ${f.power}/${f.maxPower} | Gold ${f.gold} | Morale ${f.morale} ${status}`);
+  }
+
+  // Character casualties this turn
+  if (state.characters) {
+    const deaths = Object.values(state.characters).filter(c => c.deathTurn === state.turn);
+    const wounded = Object.values(state.characters).filter(
+      c => c.status === 'wounded' && c.woundedUntilTurn > state.turn - 1
+    );
+    if (deaths.length > 0 || wounded.length > 0) {
+      lines.push('');
+      lines.push('CHARACTERS:');
+      for (const c of deaths) {
+        lines.push(`  KILLED: ${c.name} (${c.title}) — ${c.deathCause}`);
+      }
+      for (const c of wounded) {
+        lines.push(`  WOUNDED: ${c.name} (${c.title}) — recovers turn ${c.woundedUntilTurn}`);
+      }
+    }
   }
 
   return lines.join('\n');

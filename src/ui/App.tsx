@@ -8,9 +8,10 @@ import Chronicle from './components/Chronicle.js';
 import Dashboard from './components/Dashboard.js';
 import TurnControls from './components/TurnControls.js';
 import LocationDetail from './components/LocationDetail.js';
+import CharacterPanel from './components/CharacterPanel.js';
 
 type MainView = 'map' | 'dashboard';
-type SideView = 'factions' | 'chronicle' | 'location';
+type SideView = 'factions' | 'chronicle' | 'location' | 'characters';
 
 export default function App() {
   const [worldState, setWorldState] = useState<WorldState>(() => createInitialWorldState(42));
@@ -109,6 +110,12 @@ export default function App() {
             Chronicle
           </button>
           <button
+            className={sideView === 'characters' ? 'active' : ''}
+            onClick={() => setSideView('characters')}
+          >
+            Characters
+          </button>
+          <button
             className={sideView === 'location' ? 'active' : ''}
             onClick={() => setSideView('location')}
           >
@@ -121,6 +128,12 @@ export default function App() {
             factions={Object.values(worldState.factions)}
             selected={selectedFaction}
             onSelect={handleFactionSelect}
+          />
+        )}
+        {sideView === 'characters' && (
+          <CharacterPanel
+            worldState={worldState}
+            selectedFactionId={selectedFaction?.id}
           />
         )}
         {sideView === 'chronicle' && (

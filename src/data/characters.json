@@ -1,0 +1,359 @@
+[
+  {
+    "id": "marius_iv",
+    "name": "Emperor Marius IV",
+    "title": "Emperor of Aurelia",
+    "role": "advisor",
+    "factionId": "aurelian_crown",
+    "locationId": "aurelius",
+    "prowess": 3,
+    "cunning": 4,
+    "authority": 6,
+    "status": "active",
+    "renown": 55,
+    "loyalty": 100,
+    "woundedUntilTurn": 0,
+    "description": "A weak ruler clinging to a legacy he didn't earn. His paranoia grows with each season, but the crown still commands respect — for now.",
+    "traits": ["weak-willed", "paranoid", "legacy-of-greatness"],
+    "abilities": [
+      {
+        "id": "imperial_mandate",
+        "name": "Imperial Mandate",
+        "description": "The weight of the throne still means something. Troops fight harder in the Emperor's name.",
+        "passive": true,
+        "moraleBonus": 5
+      }
+    ],
+    "killCount": 0,
+    "battlesWon": 0,
+    "battlesLost": 0
+  },
+  {
+    "id": "cassius_varn",
+    "name": "Cassius Varn",
+    "title": "Lord Commander of the Imperial Guard",
+    "role": "commander",
+    "factionId": "aurelian_crown",
+    "locationId": "crosswall",
+    "prowess": 8,
+    "cunning": 5,
+    "authority": 7,
+    "status": "active",
+    "renown": 70,
+    "loyalty": 85,
+    "woundedUntilTurn": 0,
+    "description": "The real military power behind the throne. Varn is everything Marius isn't — decisive, courageous, and respected by the troops. Some whisper he should wear the crown himself.",
+    "traits": ["battle-hardened", "loyal-but-tested", "tactical-genius", "stoic"],
+    "abilities": [
+      {
+        "id": "iron_discipline",
+        "name": "Iron Discipline",
+        "description": "Troops under Varn's command hold their ground when others would break.",
+        "passive": true,
+        "combatBonus": 3,
+        "moraleBonus": 8
+      },
+      {
+        "id": "fortification_expertise",
+        "name": "Fortification Expertise",
+        "description": "Varn's defensive positions are legendary. Defenders gain additional bonuses.",
+        "passive": true,
+        "combatBonus": 2
+      }
+    ],
+    "killCount": 0,
+    "battlesWon": 0,
+    "battlesLost": 0
+  },
+  {
+    "id": "aldric_valdris",
+    "name": "Lord Aldric Valdris",
+    "title": "Lord of Valdris Hold",
+    "role": "spymaster",
+    "factionId": "house_valdris",
+    "locationId": "valdris_hold",
+    "prowess": 5,
+    "cunning": 9,
+    "authority": 7,
+    "status": "active",
+    "renown": 60,
+    "loyalty": 100,
+    "woundedUntilTurn": 0,
+    "description": "Every smile hides a dagger. Aldric plays the long game, positioning his house to inherit the empire when — not if — it collapses.",
+    "traits": ["ambitious", "calculating", "patient", "treacherous"],
+    "abilities": [
+      {
+        "id": "web_of_whispers",
+        "name": "Web of Whispers",
+        "description": "Valdris's spy network gives advance warning of attacks and amplifies scheming.",
+        "passive": true,
+        "combatBonus": 1
+      },
+      {
+        "id": "silver_tongue",
+        "name": "Silver Tongue",
+        "description": "Diplomatic overtures are significantly more likely to succeed.",
+        "passive": true,
+        "economyBonus": 0.1
+      }
+    ],
+    "killCount": 0,
+    "battlesWon": 0,
+    "battlesLost": 0
+  },
+  {
+    "id": "ser_roland",
+    "name": "Ser Roland the Unyielding",
+    "title": "Champion of House Valdris",
+    "role": "champion",
+    "factionId": "house_valdris",
+    "locationId": "valdris_hold",
+    "prowess": 9,
+    "cunning": 3,
+    "authority": 5,
+    "status": "active",
+    "renown": 45,
+    "loyalty": 90,
+    "woundedUntilTurn": 0,
+    "description": "A tournament knight who has never lost a duel. Roland fights for glory and gold — Valdris pays well for both. His loyalty is to the coin, but his pride is to the blade.",
+    "traits": ["fearless", "vain", "duelist", "mercenary-at-heart"],
+    "abilities": [
+      {
+        "id": "duel_challenge",
+        "name": "Challenge",
+        "description": "Can challenge enemy champions to single combat before a battle, potentially demoralizing the foe.",
+        "passive": false,
+        "combatBonus": 4,
+        "moraleBonus": 5
+      }
+    ],
+    "killCount": 0,
+    "battlesWon": 0,
+    "battlesLost": 0
+  },
+  {
+    "id": "elara_thorne",
+    "name": "Lady Elara Thorne",
+    "title": "Warden of the Eastern March",
+    "role": "commander",
+    "factionId": "house_thorne",
+    "locationId": "thornefield",
+    "prowess": 6,
+    "cunning": 5,
+    "authority": 8,
+    "status": "active",
+    "renown": 65,
+    "loyalty": 100,
+    "woundedUntilTurn": 0,
+    "description": "She leads from the front and her soldiers would die for her. Elara is everything the empire should be — just, brave, and dangerously outnumbered.",
+    "traits": ["principled", "brave", "inspiring", "under-resourced"],
+    "abilities": [
+      {
+        "id": "rally_the_hopeless",
+        "name": "Rally the Hopeless",
+        "description": "When outnumbered, Elara's forces fight harder. The worse the odds, the fiercer the resistance.",
+        "passive": true,
+        "combatBonus": 2,
+        "moraleBonus": 10
+      }
+    ],
+    "killCount": 0,
+    "battlesWon": 0,
+    "battlesLost": 0
+  },
+  {
+    "id": "brother_caelen",
+    "name": "Brother Caelen",
+    "title": "Hedge Knight of House Thorne",
+    "role": "champion",
+    "factionId": "house_thorne",
+    "locationId": "shepherds_rest",
+    "prowess": 7,
+    "cunning": 4,
+    "authority": 6,
+    "status": "active",
+    "renown": 30,
+    "loyalty": 95,
+    "woundedUntilTurn": 0,
+    "description": "A former monk who took up the sword when goblins burned his monastery. Fights with a terrifying calm, as if violence were just another form of prayer.",
+    "traits": ["devout", "relentless", "quiet", "haunted"],
+    "abilities": [
+      {
+        "id": "righteous_fury",
+        "name": "Righteous Fury",
+        "description": "Against goblin and bandit forces, Caelen fights with divine fervor.",
+        "passive": true,
+        "combatBonus": 3
+      }
+    ],
+    "killCount": 0,
+    "battlesWon": 0,
+    "battlesLost": 0
+  },
+  {
+    "id": "scar",
+    "name": "Scar",
+    "title": "Lord of Blackhollow",
+    "role": "warchief",
+    "factionId": "iron_fang",
+    "locationId": "blackhollow",
+    "prowess": 7,
+    "cunning": 7,
+    "authority": 6,
+    "status": "active",
+    "renown": 50,
+    "loyalty": 100,
+    "woundedUntilTurn": 0,
+    "description": "Born a farmer, forged by famine. Scar didn't choose this life — but he's terrifyingly good at it. His followers see him as a liberator. The empire sees a monster.",
+    "traits": ["pragmatic", "formerly-a-farmer", "ruthless", "survivor"],
+    "abilities": [
+      {
+        "id": "guerrilla_tactics",
+        "name": "Guerrilla Tactics",
+        "description": "Scar's raiders hit where you don't expect them. Raid success chance increases significantly.",
+        "passive": true,
+        "combatBonus": 2
+      },
+      {
+        "id": "common_mans_cause",
+        "name": "Common Man's Cause",
+        "description": "Desperate people flock to Scar's banner. Recruitment is cheaper and yields more troops.",
+        "passive": true,
+        "moraleBonus": 5
+      }
+    ],
+    "killCount": 0,
+    "battlesWon": 0,
+    "battlesLost": 0
+  },
+  {
+    "id": "maren_ashwick",
+    "name": "Maren \"Red\" Ashwick",
+    "title": "Leader of the Red Wolves",
+    "role": "spymaster",
+    "factionId": "red_wolves",
+    "locationId": "ashwood",
+    "prowess": 5,
+    "cunning": 8,
+    "authority": 5,
+    "status": "active",
+    "renown": 35,
+    "loyalty": 100,
+    "woundedUntilTurn": 0,
+    "description": "She keeps her people alive through wit and ruthlessness. Every fight is calculated — Maren doesn't believe in fair ones.",
+    "traits": ["desperate", "cunning", "survivalist", "loyal-to-her-own"],
+    "abilities": [
+      {
+        "id": "vanish",
+        "name": "Vanish",
+        "description": "When a battle is lost, Maren's forces scatter and regroup. Reduces losses from defeat.",
+        "passive": true,
+        "combatBonus": 1
+      }
+    ],
+    "killCount": 0,
+    "battlesWon": 0,
+    "battlesLost": 0
+  },
+  {
+    "id": "warchief_grak",
+    "name": "Warchief Grak",
+    "title": "Uniter of the Tribes",
+    "role": "warchief",
+    "factionId": "greentusk_horde",
+    "locationId": "greentusk_caves",
+    "prowess": 8,
+    "cunning": 6,
+    "authority": 9,
+    "status": "active",
+    "renown": 70,
+    "loyalty": 100,
+    "woundedUntilTurn": 0,
+    "description": "The first goblin in living memory to unite the tribes under one banner. Grak is not merely brutal — he's strategic. The surface-dwellers are only beginning to understand what that means.",
+    "traits": ["brutal", "charismatic", "surprisingly-strategic", "wrathful"],
+    "abilities": [
+      {
+        "id": "waaagh",
+        "name": "WAAAGH!",
+        "description": "Grak's war cry sends his horde into a frenzy. Massive combat bonus on the attack.",
+        "passive": false,
+        "combatBonus": 4,
+        "moraleBonus": 10
+      },
+      {
+        "id": "tribal_unity",
+        "name": "Tribal Unity",
+        "description": "As long as Grak lives, the tribes hold together. His death would shatter the horde.",
+        "passive": true,
+        "moraleBonus": 15
+      }
+    ],
+    "killCount": 0,
+    "battlesWon": 0,
+    "battlesLost": 0
+  },
+  {
+    "id": "skrit",
+    "name": "Skrit the Tunneler",
+    "title": "Warboss of the Undermines",
+    "role": "commander",
+    "factionId": "greentusk_horde",
+    "locationId": "ashwood",
+    "prowess": 6,
+    "cunning": 7,
+    "authority": 4,
+    "status": "active",
+    "renown": 25,
+    "loyalty": 70,
+    "woundedUntilTurn": 0,
+    "description": "Leads the sappers and tunnel-rats. Skrit's specialty is appearing where nobody expects goblins to be — inside walls, under floors, behind lines.",
+    "traits": ["devious", "cowardly-but-effective", "tunnel-vision", "ambitious"],
+    "abilities": [
+      {
+        "id": "undermine",
+        "name": "Undermine",
+        "description": "Skrit's sappers weaken fortifications before an assault. Reduces defender's location bonus.",
+        "passive": true,
+        "combatBonus": 2
+      }
+    ],
+    "killCount": 0,
+    "battlesWon": 0,
+    "battlesLost": 0
+  },
+  {
+    "id": "sera_blackwood",
+    "name": "Guildmaster Sera Blackwood",
+    "title": "Master of the Silver Road",
+    "role": "diplomat",
+    "factionId": "silver_road_guild",
+    "locationId": "marketcross",
+    "prowess": 2,
+    "cunning": 8,
+    "authority": 7,
+    "status": "active",
+    "renown": 50,
+    "loyalty": 100,
+    "woundedUntilTurn": 0,
+    "description": "Money is the only loyalty Sera understands, and she has more of it than anyone. She doesn't fight wars — she funds the right side of them.",
+    "traits": ["pragmatic", "wealthy", "amoral", "well-connected"],
+    "abilities": [
+      {
+        "id": "war_profiteer",
+        "name": "War Profiteer",
+        "description": "Sera profits from conflict. When battles happen near trade routes, the Guild gains gold.",
+        "passive": true,
+        "economyBonus": 0.15
+      },
+      {
+        "id": "buy_loyalty",
+        "name": "Buy Loyalty",
+        "description": "Gold speaks louder than swords. Diplomatic actions have increased success chance.",
+        "passive": true
+      }
+    ],
+    "killCount": 0,
+    "battlesWon": 0,
+    "battlesLost": 0
+  }
+]
