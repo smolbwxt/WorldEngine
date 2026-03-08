@@ -96,21 +96,9 @@ export default function App() {
     <div className="app">
       <header className="app-header">
         <h1>The Aurelian Decline</h1>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <button
-            onClick={() => setShowSaveManager(true)}
-            style={{
-              fontSize: '0.75rem', padding: '4px 12px',
-              background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)',
-              borderRadius: 4, color: 'var(--text-primary, #eee)', cursor: 'pointer',
-            }}
-          >
-            Save / Load
-          </button>
-          <span className="turn-info">
-            {worldState.season}, Year {worldState.year} — Turn {worldState.turn}
-          </span>
-        </div>
+        <span className="turn-info">
+          {worldState.season}, Year {worldState.year} — Turn {worldState.turn}
+        </span>
       </header>
 
       {/* Resume banner */}
@@ -126,6 +114,17 @@ export default function App() {
           }}>dismiss</button>
         </div>
       )}
+
+      <TurnControls
+        onAdvanceTurn={advanceTurn}
+        onAdvanceYear={advanceYear}
+        onReset={resetWorld}
+        currentTurn={worldState.turn}
+        currentSeason={worldState.season}
+        currentYear={worldState.year}
+        latestResult={turnResults[turnResults.length - 1] ?? null}
+        onOpenSaveManager={() => setShowSaveManager(true)}
+      />
 
       <div className="main-area">
         <div className="tab-bar">
@@ -230,14 +229,6 @@ export default function App() {
           />
         )}
       </div>
-
-      <TurnControls
-        onAdvanceTurn={advanceTurn}
-        onAdvanceYear={advanceYear}
-        onReset={resetWorld}
-        currentTurn={worldState.turn}
-        latestResult={turnResults[turnResults.length - 1] ?? null}
-      />
 
       {showSaveManager && (
         <SaveManager

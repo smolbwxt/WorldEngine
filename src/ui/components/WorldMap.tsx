@@ -1,7 +1,19 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import type { WorldState, Faction, Location } from '../../engine/types.js';
 import { generateTerrain, TERRAIN_COLORS, type TerrainMap } from '../../engine/terrain.js';
 import { generateArtisticMap, type MapGenResult } from '../../engine/mapImageGen.js';
+
+// ---------- Pan / Zoom state ----------
+interface ViewBox {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+const DEFAULT_VIEWBOX: ViewBox = { x: 0, y: 0, w: 160, h: 160 };
+const MIN_ZOOM = 10; // smallest viewBox width (most zoomed in)
+const MAX_ZOOM = 160; // full map
 
 interface Props {
   worldState: WorldState;
@@ -121,10 +133,18 @@ function computeTerritoryOverlay(
 }
 
 // Generate decorative features (trees, mountains, waves) as SVG elements
-function TerrainDecorations({ terrain }: { terrain: TerrainMap }) {
+// At higher zoom, more detail is revealed (denser decorations, additional elements)
+function TerrainDecorations({ terrain, zoomLevel = 1 }: { terrain: TerrainMap; zoomLevel?: number }) {
   const decorations: JSX.Element[] = [];
   const cs = terrain.cellSize;
   let key = 0;
+
+  // At higher zoom levels, render more decorations
+  const detailLevel = zoomLevel >= 4 ? 3 : zoomLevel >= 2 ? 2 : 1;
+  // Modulo controls sparsity: lower = denser
+  const treeMod = detailLevel >= 3 ? 1 : detailLevel >= 2 ? 2 : 3;
+  const mtnMod = detailLevel >= 2 ? 1 : 2;
+  const waterMod = detailLevel >= 2 ? 2 : 4;
 
   for (let gy = 0; gy < terrain.height; gy++) {
     for (let gx = 0; gx < terrain.width; gx++) {
@@ -132,8 +152,8 @@ function TerrainDecorations({ terrain }: { terrain: TerrainMap }) {
       const cx = gx * cs + cs / 2;
       const cy = gy * cs + cs / 2;
 
-      // Trees in forests (sparse placement for performance)
-      if ((cell.terrain === 'forest' || cell.terrain === 'dense_forest') && (gx + gy) % 3 === 0) {
+      // Trees in forests — denser at higher zoom
+      if ((cell.terrain === 'forest' || cell.terrain === 'dense_forest') && (gx + gy) % treeMod === 0) {
         const treeSize = cell.terrain === 'dense_forest' ? 0.7 : 0.55;
         decorations.push(
           <g key={key++} opacity={0.35}>
@@ -143,8 +163,8 @@ function TerrainDecorations({ terrain }: { terrain: TerrainMap }) {
         );
       }
 
-      // Mountain peaks
-      if (cell.terrain === 'mountains' && (gx + gy) % 2 === 0) {
+      // Mountain peaks — denser at higher zoom
+      if (cell.terrain === 'mountains' && (gx + gy) % mtnMod === 0) {
         decorations.push(
           <g key={key++} opacity={0.4}>
             <polygon
@@ -162,7 +182,7 @@ function TerrainDecorations({ terrain }: { terrain: TerrainMap }) {
       }
 
       // Snow caps
-      if (cell.terrain === 'snow' && (gx + gy) % 2 === 0) {
+      if (cell.terrain === 'snow' && (gx + gy) % mtnMod === 0) {
         decorations.push(
           <g key={key++} opacity={0.45}>
             <polygon
@@ -190,7 +210,7 @@ function TerrainDecorations({ terrain }: { terrain: TerrainMap }) {
       }
 
       // Wave marks in water
-      if (cell.terrain === 'deep_water' && gx % 4 === 0 && gy % 4 === 0) {
+      if (cell.terrain === 'deep_water' && gx % waterMod === 0 && gy % waterMod === 0) {
         decorations.push(
           <g key={key++} opacity={0.15}>
             <path
@@ -204,7 +224,7 @@ function TerrainDecorations({ terrain }: { terrain: TerrainMap }) {
       }
 
       // Swamp reeds
-      if (cell.terrain === 'swamp' && (gx + gy * 3) % 4 === 0) {
+      if (cell.terrain === 'swamp' && (gx + gy * 3) % (detailLevel >= 2 ? 2 : 4) === 0) {
         decorations.push(
           <g key={key++} opacity={0.3}>
             <line x1={cx - 0.3} y1={cy + 0.3} x2={cx - 0.2} y2={cy - 0.5} stroke="#3a4a2a" strokeWidth={0.12} />
@@ -214,7 +234,7 @@ function TerrainDecorations({ terrain }: { terrain: TerrainMap }) {
       }
 
       // Moor tufts
-      if (cell.terrain === 'moor' && (gx * 2 + gy) % 5 === 0) {
+      if (cell.terrain === 'moor' && (gx * 2 + gy) % (detailLevel >= 2 ? 3 : 5) === 0) {
         decorations.push(
           <g key={key++} opacity={0.2}>
             <circle cx={cx} cy={cy} r={0.3} fill="#4a4530" />
@@ -327,6 +347,104 @@ export default function WorldMap({ worldState, selectedFaction, onLocationSelect
   const [userDesc, setUserDesc] = useState('');
   const [showTerritory, setShowTerritory] = useState(true);
 
+  // Pan / Zoom state
+  const [viewBox, setViewBox] = useState<ViewBox>(DEFAULT_VIEWBOX);
+  const svgRef = useRef<SVGSVGElement>(null);
+  const isPanning = useRef(false);
+  const panStart = useRef({ x: 0, y: 0, vx: 0, vy: 0 });
+
+  const zoomLevel = DEFAULT_VIEWBOX.w / viewBox.w; // 1 = no zoom, higher = zoomed in
+
+  // Clamp viewBox so it stays within map bounds
+  const clampViewBox = useCallback((vb: ViewBox): ViewBox => {
+    const w = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, vb.w));
+    const h = w; // keep square
+    const x = Math.max(0, Math.min(160 - w, vb.x));
+    const y = Math.max(0, Math.min(160 - h, vb.y));
+    return { x, y, w, h };
+  }, []);
+
+  // Mouse wheel zoom (centered on cursor position)
+  const handleWheel = useCallback((e: React.WheelEvent<SVGSVGElement>) => {
+    e.preventDefault();
+    const svg = svgRef.current;
+    if (!svg) return;
+
+    const rect = svg.getBoundingClientRect();
+    // Cursor position in SVG coordinates
+    const cursorXRatio = (e.clientX - rect.left) / rect.width;
+    const cursorYRatio = (e.clientY - rect.top) / rect.height;
+
+    setViewBox(prev => {
+      const zoomFactor = e.deltaY > 0 ? 1.15 : 0.87; // scroll down = zoom out
+      const newW = prev.w * zoomFactor;
+      const newH = newW;
+      // Keep the cursor at the same world position
+      const newX = prev.x + cursorXRatio * (prev.w - newW);
+      const newY = prev.y + cursorYRatio * (prev.h - newH);
+      return clampViewBox({ x: newX, y: newY, w: newW, h: newH });
+    });
+  }, [clampViewBox]);
+
+  // Pan: mouse down
+  const handleMouseDown = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
+    if (e.button !== 0) return; // left button only
+    isPanning.current = true;
+    panStart.current = { x: e.clientX, y: e.clientY, vx: viewBox.x, vy: viewBox.y };
+    e.currentTarget.style.cursor = 'grabbing';
+  }, [viewBox.x, viewBox.y]);
+
+  // Pan: mouse move
+  const handleMouseMove = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
+    if (!isPanning.current) return;
+    const svg = svgRef.current;
+    if (!svg) return;
+
+    const rect = svg.getBoundingClientRect();
+    const dx = e.clientX - panStart.current.x;
+    const dy = e.clientY - panStart.current.y;
+    // Convert screen pixels to SVG units
+    const svgDx = -(dx / rect.width) * viewBox.w;
+    const svgDy = -(dy / rect.height) * viewBox.h;
+
+    setViewBox(clampViewBox({
+      x: panStart.current.vx + svgDx,
+      y: panStart.current.vy + svgDy,
+      w: viewBox.w,
+      h: viewBox.h,
+    }));
+  }, [viewBox.w, viewBox.h, clampViewBox]);
+
+  // Pan: mouse up
+  const handleMouseUp = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
+    isPanning.current = false;
+    e.currentTarget.style.cursor = 'grab';
+  }, []);
+
+  // Prevent drag clicks from triggering location select
+  const dragMoved = useRef(false);
+  const handleMouseDownCapture = useCallback((e: React.MouseEvent) => {
+    dragMoved.current = false;
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const checkMove = (me: MouseEvent) => {
+      if (Math.abs(me.clientX - startX) > 3 || Math.abs(me.clientY - startY) > 3) {
+        dragMoved.current = true;
+      }
+    };
+    const cleanup = () => {
+      window.removeEventListener('mousemove', checkMove);
+      window.removeEventListener('mouseup', cleanup);
+    };
+    window.addEventListener('mousemove', checkMove);
+    window.addEventListener('mouseup', cleanup);
+  }, []);
+
+  // Reset zoom
+  const resetZoom = useCallback(() => {
+    setViewBox(DEFAULT_VIEWBOX);
+  }, []);
+
   const locations = Object.values(worldState.locations);
 
   // Generate terrain (deterministic, memoized)
@@ -421,6 +539,22 @@ export default function WorldMap({ worldState, selectedFaction, onLocationSelect
         >
           {showTerritory ? 'Hide Territory' : 'Show Territory'}
         </button>
+        {zoomLevel > 1.05 && (
+          <button
+            className="map-control-btn"
+            onClick={resetZoom}
+            title="Reset zoom to see full map"
+          >
+            Reset Zoom ({Math.round(zoomLevel * 100)}%)
+          </button>
+        )}
+      </div>
+
+      {/* Zoom hint */}
+      <div style={{
+        fontSize: '0.65rem', color: 'var(--text-muted)', padding: '2px 4px', opacity: 0.6,
+      }}>
+        Scroll to zoom &middot; Drag to pan
       </div>
 
       {/* Generating overlay */}
@@ -434,7 +568,17 @@ export default function WorldMap({ worldState, selectedFaction, onLocationSelect
         </div>
       )}
 
-      <svg viewBox="0 0 160 160" preserveAspectRatio="xMidYMid meet">
+      <svg
+        ref={svgRef}
+        viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`}
+        preserveAspectRatio="xMidYMid meet"
+        style={{ cursor: 'grab' }}
+        onWheel={handleWheel}
+        onMouseDown={(e) => { handleMouseDown(e); handleMouseDownCapture(e); }}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+      >
         {showProcedural ? (
           <>
             {/* Terrain base layer */}
@@ -450,31 +594,32 @@ export default function WorldMap({ worldState, selectedFaction, onLocationSelect
                 />
               ))
             )}
-            {/* Territory overlay */}
-            {showTerritory && territory.map((row, gy) =>
-              row.map((cell, gx) => {
-                if (!cell) return null;
-                const color = FACTION_COLORS[cell.factionId];
-                if (!color) return null;
-                return (
-                  <rect
-                    key={`ter${gx}-${gy}`}
-                    x={gx * terrain.cellSize}
-                    y={gy * terrain.cellSize}
-                    width={terrain.cellSize}
-                    height={terrain.cellSize}
-                    fill={color}
-                    opacity={cell.strength * 0.25}
-                  />
-                );
-              })
-            )}
-            <TerrainDecorations terrain={terrain} />
+            <TerrainDecorations terrain={terrain} zoomLevel={zoomLevel} />
             <RiverPaths terrain={terrain} />
           </>
         ) : (
           // Artistic map image from Nano Banana 2
           artisticMap && <ArtisticMapLayer imageData={artisticMap} />
+        )}
+
+        {/* Territory overlay — shown on both procedural and artistic views */}
+        {showTerritory && territory.map((row, gy) =>
+          row.map((cell, gx) => {
+            if (!cell) return null;
+            const color = FACTION_COLORS[cell.factionId];
+            if (!color) return null;
+            return (
+              <rect
+                key={`ter${gx}-${gy}`}
+                x={gx * terrain.cellSize}
+                y={gy * terrain.cellSize}
+                width={terrain.cellSize}
+                height={terrain.cellSize}
+                fill={color}
+                opacity={showProcedural ? cell.strength * 0.25 : cell.strength * 0.35}
+              />
+            );
+          })
         )}
 
         {/* Road connections between locations */}
@@ -509,14 +654,17 @@ export default function WorldMap({ worldState, selectedFaction, onLocationSelect
             <g
               key={loc.id}
               style={{ cursor: 'pointer' }}
-              onClick={() => onLocationSelect(loc)}
+              onClick={() => { if (!dragMoved.current) onLocationSelect(loc); }}
               onMouseEnter={(e) => {
                 setHoveredLoc(loc);
                 const svg = e.currentTarget.closest('svg')!;
                 const rect = svg.getBoundingClientRect();
+                // Convert SVG coords to screen coords using current viewBox
+                const xRatio = (loc.x - viewBox.x) / viewBox.w;
+                const yRatio = (loc.y - viewBox.y) / viewBox.h;
                 setTooltipPos({
-                  x: (loc.x / 100) * rect.width + rect.left,
-                  y: (loc.y / 100) * rect.height + rect.top - 10,
+                  x: xRatio * rect.width + rect.left,
+                  y: yRatio * rect.height + rect.top - 10,
                 });
               }}
               onMouseLeave={() => setHoveredLoc(null)}
@@ -542,11 +690,11 @@ export default function WorldMap({ worldState, selectedFaction, onLocationSelect
               >
                 {LOCATION_ICONS[loc.type] ?? '●'}
               </text>
-              {/* Label with backdrop */}
+              {/* Label with backdrop — scales with zoom for readability */}
               <text
                 x={loc.x} y={loc.y + size + 2}
                 textAnchor="middle"
-                fontSize="1.5"
+                fontSize={Math.max(1, 1.5 / Math.sqrt(zoomLevel))}
                 fill="rgba(0,0,0,0.5)"
                 style={{ pointerEvents: 'none' }}
               >
@@ -555,7 +703,7 @@ export default function WorldMap({ worldState, selectedFaction, onLocationSelect
               <text
                 x={loc.x} y={loc.y + size + 2}
                 textAnchor="middle"
-                fontSize="1.5"
+                fontSize={Math.max(1, 1.5 / Math.sqrt(zoomLevel))}
                 fill="rgba(232,213,183,0.8)"
                 style={{ pointerEvents: 'none' }}
               >
@@ -565,6 +713,46 @@ export default function WorldMap({ worldState, selectedFaction, onLocationSelect
           );
         })}
       </svg>
+
+      {/* Minimap when zoomed in */}
+      {zoomLevel > 1.3 && (
+        <div className="world-map__minimap">
+          <svg viewBox="0 0 160 160" preserveAspectRatio="xMidYMid meet">
+            {/* Simplified terrain */}
+            {terrain.cells.filter((_, gy) => gy % 2 === 0).map((row, gyIdx) =>
+              row.filter((_, gx) => gx % 2 === 0).map((cell, gxIdx) => (
+                <rect
+                  key={`m${gxIdx}-${gyIdx}`}
+                  x={gxIdx * 2 * terrain.cellSize}
+                  y={gyIdx * 2 * terrain.cellSize}
+                  width={terrain.cellSize * 2}
+                  height={terrain.cellSize * 2}
+                  fill={TERRAIN_COLORS[cell.terrain]}
+                />
+              ))
+            )}
+            {/* Location dots */}
+            {locations.map(loc => {
+              const controllerId = getControllingFaction(loc.id, worldState);
+              return (
+                <circle
+                  key={loc.id}
+                  cx={loc.x} cy={loc.y} r={2}
+                  fill={controllerId ? FACTION_COLORS[controllerId] ?? '#888' : '#555'}
+                />
+              );
+            })}
+            {/* Viewport indicator */}
+            <rect
+              x={viewBox.x} y={viewBox.y}
+              width={viewBox.w} height={viewBox.h}
+              fill="none"
+              stroke="rgba(255,255,255,0.8)"
+              strokeWidth={1.5}
+            />
+          </svg>
+        </div>
+      )}
 
       {/* Tooltip */}
       {hoveredLoc && (
