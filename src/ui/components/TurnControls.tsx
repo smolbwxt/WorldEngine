@@ -9,20 +9,14 @@ interface Props {
   currentYear: number;
   latestResult: TurnResult | null;
   onOpenSaveManager: () => void;
+  onOpenGMPanel?: () => void;
 }
 
-const SEASON_ICONS: Record<Season, string> = {
+const SEASON_ICONS: Record<string, string> = {
   Spring: '🌱',
   Summer: '☀️',
   Autumn: '🍂',
   Winter: '❄️',
-};
-
-const SEASON_LABELS: Record<Season, string> = {
-  Spring: 'Spring',
-  Summer: 'Summer',
-  Autumn: 'Autumn',
-  Winter: 'Winter',
 };
 
 export default function TurnControls({
@@ -34,14 +28,15 @@ export default function TurnControls({
   currentYear,
   latestResult,
   onOpenSaveManager,
+  onOpenGMPanel,
 }: Props) {
   return (
     <div className="crown-bar">
       {/* Left — Season and Year display */}
       <div className="crown-bar__left">
         <div className="crown-bar__season">
-          <span className="crown-bar__season-icon">{SEASON_ICONS[currentSeason]}</span>
-          <span className="crown-bar__season-name">{SEASON_LABELS[currentSeason]}</span>
+          <span className="crown-bar__season-icon">{SEASON_ICONS[currentSeason] ?? '🌐'}</span>
+          <span className="crown-bar__season-name">{currentSeason}</span>
         </div>
         <div className="crown-bar__date">
           <span className="crown-bar__year">Year {currentYear}</span>
@@ -66,6 +61,12 @@ export default function TurnControls({
           <span className="crown-btn__icon">📜</span>
           <span className="crown-btn__label">Chronicles</span>
         </button>
+        {onOpenGMPanel && (
+          <button className="crown-btn crown-btn--gm" onClick={onOpenGMPanel}>
+            <span className="crown-btn__icon">🎲</span>
+            <span className="crown-btn__label">GM Tools</span>
+          </button>
+        )}
         <button className="crown-btn crown-btn--reset" onClick={onReset}>
           <span className="crown-btn__icon">⟲</span>
           <span className="crown-btn__label">New Era</span>

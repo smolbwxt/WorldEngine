@@ -2,6 +2,7 @@ import type { WorldState, Faction, Location, WorldEvent, Season, Treaty } from '
 import { clamp } from './world-state.js';
 import type { SeededRNG } from './rng.js';
 import type { SimulationConfig } from './config.js';
+import { resolveTagBehavior, factionTypeToTags } from './tags.js';
 
 /** Process the economy phase: income, taxes, upkeep, trade, treaties */
 export function processEconomy(state: WorldState, rng: SeededRNG, config: SimulationConfig): WorldEvent[] {
@@ -30,15 +31,25 @@ export function processEconomy(state: WorldState, rng: SeededRNG, config: Simula
       }
     }
 
-    // Tax collection (empire gets extra from taxation, reduced by corruption)
-    if (faction.type === 'empire') {
-      const taxEfficiency = 1 - faction.corruption / 100;
-      income = Math.floor(income * (1 + taxEfficiency * ec.empireTaxBonus));
+    // Tag-based income modifiers
+    const tags = faction.tags?.length > 0 ? faction.tags : factionTypeToTags(faction.type);
+    const { modifiers } = resolveTagBehavior(tags, state.definition?.customTags);
+    const incomeRateMod = modifiers.incomeRate ?? 0;
+    const tradeIncomeMod = modifiers.tradeIncome ?? 0;
+
+    // Apply income rate modifier (e.g. decaying-empire, industrious)
+    if (incomeRateMod !== 0) {
+      income = Math.floor(income * (1 + incomeRateMod));
+    }
+    // Apply trade income modifier (e.g. mercantile, trading)
+    if (tradeIncomeMod > 0) {
+      income = Math.floor(income * (1 + tradeIncomeMod));
     }
 
-    // Merchants get trade bonuses
-    if (faction.type === 'merchant') {
-      income = Math.floor(income * ec.merchantTradeMultiplier);
+    // Corruption tax efficiency reduction for corrupt factions
+    if (faction.corruption > 30) {
+      const taxEfficiency = 1 - faction.corruption / 200;
+      income = Math.floor(income * taxEfficiency);
     }
 
     // Upkeep costs

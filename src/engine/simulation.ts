@@ -6,6 +6,7 @@ import { decideFactionAction, getLocationController } from './factions.js';
 import { resolveRaid, resolveCombat } from './combat.js';
 import { processRandomEvents, processStoryHooks } from './events.js';
 import { decideTreatyProposal, evaluateTreatyProposal, executeTreaty } from './treaties.js';
+import { resolveTagBehavior, factionTypeToTags } from './tags.js';
 import {
   processCharacterPhase,
   getCharacterAtLocation,
@@ -191,7 +192,8 @@ function processEmpireDecay(state: WorldState, rng: SeededRNG, config: Simulatio
   const dc = config.decay;
 
   for (const faction of Object.values(state.factions)) {
-    if (faction.type !== 'empire') continue;
+    // Apply decay to any faction with corruption > 30 (not just empires)
+    if (faction.corruption < 30) continue;
 
     // Corruption ticks up slowly
     if (rng.chance(dc.corruptionTickChance)) {
@@ -231,6 +233,13 @@ function processEmpireDecay(state: WorldState, rng: SeededRNG, config: Simulatio
   return events;
 }
 
+/** Get tag-based modifier for a stat, falling back to 0 */
+function getTagModifier(faction: Faction, state: WorldState, stat: string): number {
+  const tags = faction.tags?.length > 0 ? faction.tags : factionTypeToTags(faction.type);
+  const { modifiers } = resolveTagBehavior(tags, state.definition?.customTags);
+  return modifiers[stat] ?? 0;
+}
+
 function executeFactionAction(
   faction: Faction,
   action: FactionAction,
@@ -258,10 +267,8 @@ function executeFactionAction(
       const raidCharConsequences: string[] = [];
 
       if (result.success) {
-        // Apply raid loot multiplier for bandits/goblins
-        const am = config.actionMultipliers;
-        const lootMult = faction.type === 'bandit' ? am.bandit.raidLoot
-                       : faction.type === 'goblin' ? am.goblin.raidLoot : 1;
+        // Apply raid loot multiplier from tags
+        const lootMult = 1 + getTagModifier(faction, state, 'raidLoot');
         const boostedLoot = Math.floor(result.lootGold * lootMult);
         faction.gold += boostedLoot;
         target.prosperity = clamp(target.prosperity - result.prosperityDamage, 0, 100);
@@ -380,7 +387,8 @@ function executeFactionAction(
 
     case 'recruit': {
       const recruited = rng.int(rec.recruitRange[0], rec.recruitRange[1]);
-      const recruitCostMult = faction.type === 'bandit' ? config.actionMultipliers.bandit.recruitCost : 1;
+      const recruitMod = getTagModifier(faction, state, 'recruitEfficiency');
+      const recruitCostMult = 1 - recruitMod * 0.5; // higher efficiency = lower cost
       faction.power = clamp(faction.power + recruited, 0, faction.maxPower);
       faction.gold = Math.max(0, faction.gold - Math.floor(recruited * rec.recruitCost * recruitCostMult));
       events.push({
@@ -401,7 +409,7 @@ function executeFactionAction(
     case 'fortify': {
       const loc = state.locations[action.locationId];
       if (!loc) break;
-      const fortifyMult = faction.type === 'noble' ? config.actionMultipliers.noble.fortifyBonus : 1;
+      const fortifyMult = 1 + getTagModifier(faction, state, 'defenseBonus');
       const amount = Math.floor(rng.int(rec.fortifyRange[0], rec.fortifyRange[1]) * fortifyMult);
       loc.defense = clamp(loc.defense + amount, 0, 100);
       faction.gold = Math.max(0, faction.gold - rec.fortifyCost);
@@ -424,7 +432,7 @@ function executeFactionAction(
     case 'patrol': {
       const loc = state.locations[action.locationId];
       if (!loc) break;
-      const patrolMult = faction.type === 'empire' ? config.actionMultipliers.empire.patrolDefense : 1;
+      const patrolMult = 1 + getTagModifier(faction, state, 'defenseBonus');
       const patrolBoost = Math.floor(rec.patrolDefenseBoost * patrolMult);
       loc.defense = clamp(loc.defense + patrolBoost, 0, 100);
       events.push({
@@ -455,7 +463,7 @@ function executeFactionAction(
         loc.prosperity = clamp(loc.prosperity - ec.taxProsperityDamage, 0, 100);
       }
       // Corruption eats some taxes
-      const taxMult = faction.type === 'empire' ? config.actionMultipliers.empire.taxIncome : 1;
+      const taxMult = 1 + getTagModifier(faction, state, 'incomeRate');
       const effective = Math.floor(taxes * (1 - faction.corruption / ec.corruptionTaxDivisor) * taxMult);
       faction.gold += effective;
       events.push({
@@ -474,10 +482,15 @@ function executeFactionAction(
     }
 
     case 'scheme': {
-      // Noble scheming — weakens the empire or rivals
-      const empire = state.factions['aurelian_crown'];
-      if (empire) {
-        empire.corruption = clamp(empire.corruption + rng.int(dc.schemeCorruptionRange[0], dc.schemeCorruptionRange[1]), 0, 100);
+      // Scheming — targets the most powerful rival
+      const rivals = Object.values(state.factions)
+        .filter(f => f.id !== faction.id && !faction.alliances.includes(f.id))
+        .sort((a, b) => b.power - a.power);
+      const target = rivals[0];
+      if (target) {
+        const schemeMult = 1 + getTagModifier(faction, state, 'schemeEffect');
+        const corruptionGain = Math.floor(rng.int(dc.schemeCorruptionRange[0], dc.schemeCorruptionRange[1]) * schemeMult);
+        target.corruption = clamp(target.corruption + corruptionGain, 0, 100);
         faction.gold = Math.max(0, faction.gold - dc.schemeCost);
         events.push({
           id: `scheme_${faction.id}_t${state.turn}`,
@@ -485,10 +498,10 @@ function executeFactionAction(
           season: state.season,
           year: state.year,
           type: 'scandal',
-          text: `${faction.leader} works behind the scenes, manipulating court politics and deepening the empire's dysfunction.`,
+          text: `${faction.leader} works behind the scenes, undermining ${target.name} through manipulation and intrigue.`,
           icon: '🗡️',
           factionId: faction.id,
-          consequences: ['Imperial corruption increases'],
+          consequences: [`${target.name} corruption increases`],
           hookPotential: 3,
         });
       }
@@ -540,7 +553,7 @@ function executeFactionAction(
       if (!loc) break;
       const investment = Math.min(rec.investmentCap, faction.gold);
       faction.gold -= investment;
-      const investMult = faction.type === 'merchant' ? config.actionMultipliers.merchant.investEfficiency : 1;
+      const investMult = 1 + getTagModifier(faction, state, 'tradeIncome');
       loc.prosperity = clamp(loc.prosperity + Math.floor(investment / rec.investmentEfficiency * investMult), 0, 100);
       events.push({
         id: `invest_${faction.id}_${loc.id}_t${state.turn}`,
@@ -561,7 +574,7 @@ function executeFactionAction(
     case 'bribe': {
       const target = state.factions[action.targetFactionId];
       if (!target) break;
-      const bribeMult = faction.type === 'merchant' ? config.actionMultipliers.merchant.bribeCost : 1;
+      const bribeMult = 1 - getTagModifier(faction, state, 'tradeIncome') * 0.3; // traders pay less for bribes
       const bribeAmount = Math.min(Math.floor(dc.bribeCost * bribeMult), faction.gold);
       faction.gold -= bribeAmount;
       faction.relationships[target.id] = clamp(
@@ -793,7 +806,7 @@ function executeFactionAction(
     case 'trade': {
       const loc = state.locations[action.locationId];
       if (!loc) break;
-      const tradeMult = faction.type === 'merchant' ? config.actionMultipliers.merchant.tradeIncome : 1;
+      const tradeMult = 1 + getTagModifier(faction, state, 'tradeIncome');
       const income = Math.floor((Math.floor(loc.prosperity * rec.tradeIncomeRate) + rng.int(rec.tradeRandomRange[0], rec.tradeRandomRange[1])) * tradeMult);
       faction.gold += income;
       events.push({

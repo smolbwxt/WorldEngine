@@ -161,8 +161,9 @@ export function decideTreatyProposal(
 
   const others = Object.values(state.factions).filter(f => f.id !== faction.id);
 
-  // Merchants: propose trade agreements with anyone positive
-  if (faction.type === 'merchant') {
+  // Trading-oriented factions: propose trade agreements with anyone positive
+  const hasTradingTag = (faction.tags ?? []).some(t => ['trading', 'mercantile', 'merchant-prince'].includes(t)) || faction.type === 'merchant';
+  if (hasTradingTag) {
     for (const other of others) {
       if (hasActiveTreatyWith(other.id)) continue;
       const rel = faction.relationships[other.id] ?? 0;
@@ -177,7 +178,9 @@ export function decideTreatyProposal(
     // Pay off threatening factions
     for (const other of others) {
       if (hasActiveTreatyWith(other.id)) continue;
-      if ((other.type === 'bandit' || other.type === 'goblin') && faction.gold > 100) {
+      const otherAggressive = (other.tags ?? []).some(t => ['raiding', 'aggressive', 'warlord', 'insurgent', 'pirate'].includes(t))
+        || other.type === 'bandit' || other.type === 'goblin';
+      if (otherAggressive && faction.gold > 100) {
         const rel = faction.relationships[other.id] ?? 0;
         if (rel < -10 && rng.chance(0.25)) {
           return {
@@ -206,11 +209,12 @@ export function decideTreatyProposal(
     }
   }
 
-  // Nobles: propose mutual defense with other nobles or empire
-  if (faction.type === 'noble') {
+  // Diplomatic/honorable factions: propose mutual defense with non-hostile factions
+  const hasDiplomaticTag = (faction.tags ?? []).some(t => ['diplomatic', 'honorable', 'noble', 'feudal', 'hegemon'].includes(t)) || faction.type === 'noble';
+  if (hasDiplomaticTag) {
     for (const other of others) {
       if (hasActiveTreatyWith(other.id)) continue;
-      if ((other.type === 'noble' || other.type === 'empire') && !faction.enemies.includes(other.id)) {
+      if (!faction.enemies.includes(other.id)) {
         const rel = faction.relationships[other.id] ?? 0;
         if (rel > 20 && rng.chance(0.2)) {
           return {
