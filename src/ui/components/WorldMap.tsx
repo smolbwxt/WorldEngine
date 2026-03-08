@@ -364,27 +364,37 @@ export default function WorldMap({ worldState, selectedFaction, onLocationSelect
     return { x, y, w, h };
   }, []);
 
-  // Mouse wheel zoom (centered on cursor position)
-  const handleWheel = useCallback((e: React.WheelEvent<SVGSVGElement>) => {
-    e.preventDefault();
+  // Mouse wheel zoom — use a native listener with { passive: false }
+  // so preventDefault() actually stops the page from scrolling.
+  // React's onWheel uses passive listeners and can't prevent default.
+  const clampRef = useRef(clampViewBox);
+  clampRef.current = clampViewBox;
+
+  useEffect(() => {
     const svg = svgRef.current;
     if (!svg) return;
 
-    const rect = svg.getBoundingClientRect();
-    // Cursor position in SVG coordinates
-    const cursorXRatio = (e.clientX - rect.left) / rect.width;
-    const cursorYRatio = (e.clientY - rect.top) / rect.height;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
 
-    setViewBox(prev => {
-      const zoomFactor = e.deltaY > 0 ? 1.15 : 0.87; // scroll down = zoom out
-      const newW = prev.w * zoomFactor;
-      const newH = newW;
-      // Keep the cursor at the same world position
-      const newX = prev.x + cursorXRatio * (prev.w - newW);
-      const newY = prev.y + cursorYRatio * (prev.h - newH);
-      return clampViewBox({ x: newX, y: newY, w: newW, h: newH });
-    });
-  }, [clampViewBox]);
+      const rect = svg.getBoundingClientRect();
+      const cursorXRatio = (e.clientX - rect.left) / rect.width;
+      const cursorYRatio = (e.clientY - rect.top) / rect.height;
+
+      setViewBox(prev => {
+        const zoomFactor = e.deltaY > 0 ? 1.15 : 0.87;
+        const newW = prev.w * zoomFactor;
+        const newH = newW;
+        const newX = prev.x + cursorXRatio * (prev.w - newW);
+        const newY = prev.y + cursorYRatio * (prev.h - newH);
+        return clampRef.current({ x: newX, y: newY, w: newW, h: newH });
+      });
+    };
+
+    svg.addEventListener('wheel', onWheel, { passive: false });
+    return () => svg.removeEventListener('wheel', onWheel);
+  }, []);
 
   // Pan: mouse down
   const handleMouseDown = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
@@ -573,7 +583,6 @@ export default function WorldMap({ worldState, selectedFaction, onLocationSelect
         viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`}
         preserveAspectRatio="xMidYMid meet"
         style={{ cursor: 'grab' }}
-        onWheel={handleWheel}
         onMouseDown={(e) => { handleMouseDown(e); handleMouseDownCapture(e); }}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
