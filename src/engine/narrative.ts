@@ -138,6 +138,44 @@ const STATE_FRAGMENTS: Array<{
       'Some bonds transcend allegiance. In a world of betrayal, a sworn oath still means something.',
     ],
   },
+  {
+    condition: (s) => Object.values(s.factions).some(f => f.type === 'rebels'),
+    fragments: [
+      'Rebels stir in the hinterlands. What begins as desperation may become something more.',
+      'The old order cracks. From the rubble, new banners rise.',
+    ],
+  },
+  {
+    condition: (s) => Object.values(s.factions).some(f => f.type === 'breakaway'),
+    fragments: [
+      'A faction born of betrayal tests its wings. Loyalty is a coin that can only be spent once.',
+      'The defector\'s gamble: everything to gain, and only the old world to lose.',
+    ],
+  },
+  {
+    condition: (s) => Object.values(s.factions).some(f => f.type === 'city-state'),
+    fragments: [
+      'Free cities dot the map now — merchants who learned that gold means nothing without walls.',
+      'The rise of city-states changes the game. Money buys mercenaries. Mercenaries hold walls. Walls make freedom.',
+    ],
+  },
+  {
+    condition: (s) => Object.values(s.factions).some(f => f.type === 'player-founded'),
+    fragments: [
+      'A new power, born of bold action, carves its place in a hostile world.',
+      'The newcomers have staked their claim. Now comes the hard part: keeping it.',
+    ],
+  },
+  {
+    condition: (s) => {
+      const factionCount = Object.keys(s.factions).length;
+      return factionCount >= 8;
+    },
+    fragments: [
+      'The realm fragments. More factions than ever vie for shrinking resources.',
+      'Too many crowns, too few heads. The world cannot sustain this many ambitions.',
+    ],
+  },
 ];
 
 /** Conflict-specific narrative fragments */

@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import type { WorldState, PendingTurn, PendingAction, WorldEvent, FactionAction, CharacterVendetta, CharacterTrophy } from '../../engine/types.js';
-import { gmKillCharacter, gmEditCharacter } from '../../engine/gm-actions.js';
+import type { WorldState, PendingTurn, PendingAction, WorldEvent, FactionAction, CharacterVendetta } from '../../engine/types.js';
+import { gmKillCharacter, createBlankFaction, createBlankCharacter, gmAddFaction } from '../../engine/gm-actions.js';
 
 interface InterventionPanelProps {
   worldState: WorldState;
@@ -9,7 +9,7 @@ interface InterventionPanelProps {
   onCancel: () => void;
 }
 
-type PlayerActionType = 'kill_character' | 'wound_character' | 'create_vendetta' | 'steal_artifact' | 'boost_faction' | 'custom_event';
+type PlayerActionType = 'kill_character' | 'wound_character' | 'create_vendetta' | 'steal_artifact' | 'boost_faction' | 'found_settlement' | 'custom_event';
 
 interface PlayerIntervention {
   id: string;
@@ -58,6 +58,9 @@ export default function InterventionPanel({ worldState, pending, onExecute, onCa
   const [artifactName, setArtifactName] = useState('');
   const [boostStat, setBoostStat] = useState<'power' | 'gold' | 'morale'>('power');
   const [boostAmount, setBoostAmount] = useState(10);
+  const [settlementName, setSettlementName] = useState('');
+  const [settlementLocationId, setSettlementLocationId] = useState('');
+  const [settlementTags, setSettlementTags] = useState('');
 
   const characters = Object.values(worldState.characters ?? {}).filter(c => c.status !== 'dead');
   const factions = Object.values(worldState.factions);
@@ -199,6 +202,50 @@ export default function InterventionPanel({ worldState, pending, onExecute, onCa
         };
         break;
       }
+      case 'found_settlement': {
+        if (!settlementName.trim() || !settlementLocationId) return;
+        const loc = worldState.locations[settlementLocationId];
+        if (!loc) return;
+        desc = `Found "${settlementName}" at ${loc.name}`;
+        intervention.description = desc;
+        const capturedName = settlementName;
+        const capturedLocId = settlementLocationId;
+        const capturedTags = settlementTags.split(',').map(s => s.trim()).filter(Boolean);
+        intervention.apply = (state, pend) => {
+          const factionId = `player_faction_${Date.now()}`;
+          const faction = createBlankFaction(factionId);
+          faction.name = capturedName;
+          faction.type = 'player-founded';
+          faction.tags = capturedTags.length > 0 ? capturedTags : ['defensive', 'ambitious'];
+          faction.color = '#e67e22';
+          faction.description = `Founded by player characters at ${loc.name}.`;
+          faction.leader = 'Player Leader';
+          faction.power = Math.max(3, Math.floor(loc.population / 25));
+          faction.maxPower = faction.power * 3;
+          faction.morale = 75;
+          faction.gold = Math.floor(loc.prosperity * 1.5);
+          faction.personality = { dealmaking: 0.5, aggression: 0.3, greed: 0.4 };
+          faction.controlledLocations = [capturedLocId];
+
+          // Remove from current owner
+          for (const f of Object.values(state.factions)) {
+            f.controlledLocations = f.controlledLocations.filter(id => id !== capturedLocId);
+          }
+
+          gmAddFaction(state, faction);
+
+          pend.injectedEvents.push({
+            id: `found_${factionId}`,
+            turn: state.turn, season: state.season, year: state.year,
+            type: 'story_hook',
+            text: `[Player] A new banner rises over ${loc.name}! "${capturedName}" is founded, claiming the territory and establishing a foothold in the world.`,
+            icon: '🏴', factionId, locationId: capturedLocId,
+            consequences: [`${capturedName} claims ${loc.name}`],
+            hookPotential: 5,
+          });
+        };
+        break;
+      }
       case 'custom_event': {
         if (!customEventText.trim()) return;
         desc = customEventText;
@@ -236,6 +283,9 @@ export default function InterventionPanel({ worldState, pending, onExecute, onCa
     setArtifactName('');
     setBoostStat('power');
     setBoostAmount(10);
+    setSettlementName('');
+    setSettlementLocationId('');
+    setSettlementTags('');
   };
 
   const handleExecute = () => {
@@ -335,6 +385,7 @@ export default function InterventionPanel({ worldState, pending, onExecute, onCa
                   <option value="create_vendetta">Create Vendetta</option>
                   <option value="steal_artifact">Steal Artifact</option>
                   <option value="boost_faction">Boost Faction</option>
+                  <option value="found_settlement">Found Settlement</option>
                   <option value="custom_event">Custom Event</option>
                 </select>
 
@@ -401,6 +452,38 @@ export default function InterventionPanel({ worldState, pending, onExecute, onCa
                         style={{ width: 60 }}
                       />
                     </div>
+                  </>
+                )}
+
+                {actionType === 'found_settlement' && (
+                  <>
+                    <input
+                      placeholder="Settlement/faction name..."
+                      value={settlementName}
+                      onChange={e => setSettlementName(e.target.value)}
+                    />
+                    <select value={settlementLocationId} onChange={e => setSettlementLocationId(e.target.value)}>
+                      <option value="">Select location...</option>
+                      {locations
+                        .filter(l => {
+                          // Show unclaimed or low-defense locations
+                          const owner = factions.find(f => f.controlledLocations.includes(l.id));
+                          return !owner || l.defense <= 15;
+                        })
+                        .map(l => {
+                          const owner = factions.find(f => f.controlledLocations.includes(l.id));
+                          return (
+                            <option key={l.id} value={l.id}>
+                              {l.name} ({l.type}, pop {l.population}{owner ? `, owned: ${owner.name}` : ', unclaimed'})
+                            </option>
+                          );
+                        })}
+                    </select>
+                    <input
+                      placeholder="Tags (comma-separated): defensive, ambitious..."
+                      value={settlementTags}
+                      onChange={e => setSettlementTags(e.target.value)}
+                    />
                   </>
                 )}
 

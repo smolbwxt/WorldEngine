@@ -7,6 +7,7 @@ import { resolveRaid, resolveCombat } from './combat.js';
 import { processRandomEvents, processStoryHooks } from './events.js';
 import { decideTreatyProposal, evaluateTreatyProposal, executeTreaty } from './treaties.js';
 import { resolveTagBehavior, factionTypeToTags } from './tags.js';
+import { processFactionDeaths, processFactionBirths } from './faction-lifecycle.js';
 import {
   processCharacterPhase,
   getCharacterAtLocation,
@@ -142,10 +143,14 @@ export function resolveTurn(state: WorldState, config: SimulationConfig = DEFAUL
     }
   }
 
-  // 6. Random Events Phase
+  // 6. Faction Lifecycle Phase — deaths, births, splintering
+  events.push(...processFactionDeaths(state, rng));
+  events.push(...processFactionBirths(state, rng));
+
+  // 7. Random Events Phase
   events.push(...processRandomEvents(state, rng, config));
 
-  // 7. Story Hook Phase
+  // 8. Story Hook Phase
   events.push(...processStoryHooks(state));
 
   // Record all events
@@ -341,10 +346,14 @@ export function executePreparedTurn(state: WorldState, pending: PendingTurn, con
     }
   }
 
-  // 6. Random Events Phase
+  // 6. Faction Lifecycle Phase — deaths, births, splintering
+  events.push(...processFactionDeaths(state, rng));
+  events.push(...processFactionBirths(state, rng));
+
+  // 7. Random Events Phase
   events.push(...processRandomEvents(state, rng, config));
 
-  // 7. Story Hook Phase
+  // 8. Story Hook Phase
   events.push(...processStoryHooks(state));
 
   // Record all events
