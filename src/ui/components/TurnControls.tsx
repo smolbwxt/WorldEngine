@@ -9,20 +9,16 @@ interface Props {
   currentYear: number;
   latestResult: TurnResult | null;
   onOpenSaveManager: () => void;
+  onOpenGMPanel?: () => void;
+  interventionMode?: boolean;
+  onToggleIntervention?: () => void;
 }
 
-const SEASON_ICONS: Record<Season, string> = {
+const SEASON_ICONS: Record<string, string> = {
   Spring: '🌱',
   Summer: '☀️',
   Autumn: '🍂',
   Winter: '❄️',
-};
-
-const SEASON_LABELS: Record<Season, string> = {
-  Spring: 'Spring',
-  Summer: 'Summer',
-  Autumn: 'Autumn',
-  Winter: 'Winter',
 };
 
 export default function TurnControls({
@@ -34,14 +30,17 @@ export default function TurnControls({
   currentYear,
   latestResult,
   onOpenSaveManager,
+  onOpenGMPanel,
+  interventionMode,
+  onToggleIntervention,
 }: Props) {
   return (
     <div className="crown-bar">
       {/* Left — Season and Year display */}
       <div className="crown-bar__left">
         <div className="crown-bar__season">
-          <span className="crown-bar__season-icon">{SEASON_ICONS[currentSeason]}</span>
-          <span className="crown-bar__season-name">{SEASON_LABELS[currentSeason]}</span>
+          <span className="crown-bar__season-icon">{SEASON_ICONS[currentSeason] ?? '🌐'}</span>
+          <span className="crown-bar__season-name">{currentSeason}</span>
         </div>
         <div className="crown-bar__date">
           <span className="crown-bar__year">Year {currentYear}</span>
@@ -55,10 +54,21 @@ export default function TurnControls({
           <span className="crown-btn__icon">⏭</span>
           <span className="crown-btn__label">Advance Season</span>
         </button>
-        <button className="crown-btn crown-btn--year" onClick={onAdvanceYear}>
+        <button className="crown-btn crown-btn--year" onClick={onAdvanceYear} title={interventionMode ? 'Disabled during intervention mode' : 'Advance 4 turns'} disabled={interventionMode}>
           <span className="crown-btn__icon">⏩</span>
           <span className="crown-btn__label">Full Year</span>
         </button>
+
+        {onToggleIntervention && (
+          <button
+            className={`crown-btn crown-btn--intervention ${interventionMode ? 'crown-btn--intervention-active' : ''}`}
+            onClick={onToggleIntervention}
+            title={interventionMode ? 'Players will review actions before resolution' : 'Click to enable player intervention between turns'}
+          >
+            <span className="crown-btn__icon">🎭</span>
+            <span className="crown-btn__label">{interventionMode ? 'Players: ON' : 'Players'}</span>
+          </button>
+        )}
 
         <div className="crown-bar__divider" />
 
@@ -66,6 +76,12 @@ export default function TurnControls({
           <span className="crown-btn__icon">📜</span>
           <span className="crown-btn__label">Chronicles</span>
         </button>
+        {onOpenGMPanel && (
+          <button className="crown-btn crown-btn--gm" onClick={onOpenGMPanel}>
+            <span className="crown-btn__icon">🎲</span>
+            <span className="crown-btn__label">GM Tools</span>
+          </button>
+        )}
         <button className="crown-btn crown-btn--reset" onClick={onReset}>
           <span className="crown-btn__icon">⟲</span>
           <span className="crown-btn__label">New Era</span>

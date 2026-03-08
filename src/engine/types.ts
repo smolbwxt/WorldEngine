@@ -1,36 +1,19 @@
 // ============================================================
-// Core Data Models for The Aurelian Decline
+// Core Data Models for WorldEngine
 // ============================================================
 
-export type FactionType =
-  | 'empire'
-  | 'noble'
-  | 'bandit'
-  | 'goblin'
-  | 'town'
-  | 'merchant'
-  | 'religious';
+import type { TagBehavior } from './tags.js';
+import type { SimulationConfig } from './config.js';
 
-export type LocationType =
-  | 'capital'
-  | 'fortress'
-  | 'castle'
-  | 'town'
-  | 'village'
-  | 'ruins'
-  | 'lair'
-  | 'temple'
-  | 'mine'
-  | 'tower'
-  | 'dungeon'
-  | 'catacombs'
-  | 'port'
-  | 'shrine'
-  | 'outpost';
+/** Faction type is now a freeform string label (cosmetic only). */
+export type FactionType = string;
 
-export type Season = 'Spring' | 'Summer' | 'Autumn' | 'Winter';
+/** Location type is now a freeform string label. */
+export type LocationType = string;
 
-export const SEASONS: Season[] = ['Spring', 'Summer', 'Autumn', 'Winter'];
+export type Season = string;
+
+export const SEASONS: string[] = ['Spring', 'Summer', 'Autumn', 'Winter'];
 
 export interface FactionPersonality {
   dealmaking: number;   // 0-1, preference for negotiation over violence
@@ -42,6 +25,8 @@ export interface Faction {
   id: string;
   name: string;
   type: FactionType;
+  tags: string[];
+  color?: string;
 
   // Resources
   power: number;
@@ -168,17 +153,28 @@ export interface TurnResult {
   narrative: string;  // procedural flavor text recap of the turn
 }
 
-export interface WorldState {
+// === Player Intervention System ===
+
+/** A single pending faction action that players can review/modify before execution */
+export interface PendingAction {
+  factionId: string;
+  factionName: string;
+  factionColor?: string;
+  action: FactionAction;
+  description: string;
+  enabled: boolean;       // can be toggled off to cancel action
+  playerNote?: string;    // optional GM annotation
+}
+
+/** Snapshot of a turn after decisions but before execution — the intervention point */
+export interface PendingTurn {
   turn: number;
-  year: number;
   season: Season;
-  factions: Record<string, Faction>;
-  locations: Record<string, Location>;
-  characters: Record<string, Character>;
-  activeTreaties: Treaty[];
-  eventLog: WorldEvent[];
-  storyBeatsTriggered: string[];
-  rngSeed: number;
+  year: number;
+  actions: PendingAction[];
+  prePhaseEvents: WorldEvent[];   // decay + economy events already applied
+  rngSeed: number;                // for resuming deterministic execution
+  injectedEvents: WorldEvent[];   // player-added events to inject during resolution
 }
 
 export type FactionAction =
@@ -200,13 +196,7 @@ export type FactionAction =
 
 // === Character / NPC System ===
 
-export type CharacterRole =
-  | 'commander'     // military leader — combat bonuses
-  | 'spymaster'     // intelligence — sabotage, scouting
-  | 'diplomat'      // negotiation — treaty bonuses
-  | 'champion'      // personal combatant — duels, morale
-  | 'advisor'       // governance — economy, corruption
-  | 'warchief';     // goblin/bandit leader — raid bonuses
+export type CharacterRole = string;
 
 export type CharacterStatus = 'active' | 'wounded' | 'captured' | 'dead';
 
@@ -318,6 +308,7 @@ export interface EventTemplate {
     minTurn?: number;
     season?: Season;
     requiresFaction?: FactionType;
+    requiresTag?: string;
   };
   effects: {
     targetType: 'faction' | 'location' | 'global';
@@ -325,4 +316,61 @@ export interface EventTemplate {
   };
   hookPotential: number;
   weight: number;
+}
+
+// === World Definition (for initialization & presets) ===
+
+export interface WorldDefinition {
+  meta: {
+    name: string;
+    description: string;
+    theme: string;
+    startingSeason: string;
+    seasonNames: string[];
+  };
+  factions: Faction[];
+  locations: Location[];
+  characters: Character[];
+  events: EventTemplate[];
+  storyHooks: StoryHook[];
+  availableTags: string[];
+  customTags?: TagBehavior[];
+  mapImage?: string;
+  mapGrid?: MapGridConfig;
+  config?: Partial<SimulationConfig>;
+}
+
+export interface StoryHook {
+  id: string;
+  triggerTurn: number;
+  title: string;
+  text: string;
+  hookPotential: number;
+}
+
+export interface MapGridConfig {
+  rows: number;
+  cols: number;
+  cells: MapCell[][];
+}
+
+export interface MapCell {
+  terrain: string;
+  color: string;
+  owner?: string;
+  locationId?: string;
+}
+
+export interface WorldState {
+  turn: number;
+  year: number;
+  season: Season;
+  factions: Record<string, Faction>;
+  locations: Record<string, Location>;
+  characters: Record<string, Character>;
+  activeTreaties: Treaty[];
+  eventLog: WorldEvent[];
+  storyBeatsTriggered: string[];
+  rngSeed: number;
+  definition?: WorldDefinition;
 }

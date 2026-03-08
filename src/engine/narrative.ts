@@ -9,7 +9,7 @@ import type { SeededRNG } from './rng.js';
 // ============================================================
 
 /** Season-specific atmospheric openers */
-const SEASON_OPENERS: Record<Season, string[]> = {
+const SEASON_OPENERS: Record<string, string[]> = {
   Spring: [
     'The snows retreat, revealing {state}.',
     'Mud season. The roads soften, but the politics harden.',
@@ -46,85 +46,54 @@ const STATE_FRAGMENTS: Array<{
   fragments: string[];
 }> = [
   {
-    condition: (s) => {
-      const crown = s.factions['aurelian_crown'];
-      return !!crown && crown.corruption > 80;
-    },
+    condition: (s) => Object.values(s.factions).some(f => f.corruption > 80),
     fragments: [
-      'The empire rots from within. Court officials sell positions while peasants starve.',
-      'Imperial corruption is now an open joke. Even the tax collectors bribe each other.',
-      'The Crown\'s grip loosens with each passing season. Everyone can feel it.',
+      'Corruption eats at the foundations of power. Officials sell positions while the common folk starve.',
+      'The rot runs deep. Even the tax collectors bribe each other now.',
+      'A once-mighty faction crumbles from within. Everyone can feel the end approaching.',
     ],
   },
   {
-    condition: (s) => {
-      const crown = s.factions['aurelian_crown'];
-      return !!crown && crown.power <= 20;
-    },
+    condition: (s) => Object.values(s.factions).some(f => f.power <= 15 && f.controlledLocations.length > 0),
     fragments: [
-      'The imperial legions are a shadow of their former glory. Barracks stand half-empty.',
-      'Few answer the Crown\'s call to arms anymore. Why fight for a dying empire?',
-      'Imperial patrols have become rare. The roads belong to whoever is bold enough to take them.',
+      'A great power fades. Their barracks stand half-empty, their patrols a memory.',
+      'Few answer the call to arms anymore. Why fight for a dying cause?',
+      'The roads grow dangerous as once-reliable patrols become rare.',
     ],
   },
   {
-    condition: (s) => {
-      const grak = s.characters?.['warchief_grak'];
-      return !!grak && grak.status === 'active' && grak.renown >= 70;
-    },
+    condition: (s) => Object.values(s.characters ?? {}).some(c => c.status === 'active' && c.renown >= 70),
     fragments: [
-      'Grak\'s name is spoken in fearful whispers from {loc} to the capital.',
-      'The tribes grow bolder under Grak\'s banner. United, they are something new. Something dangerous.',
+      'A legendary figure\'s name is spoken in fearful whispers across the realm.',
+      'Under bold leadership, a faction grows into something new. Something dangerous.',
     ],
   },
   {
-    condition: (s) => {
-      const grak = s.characters?.['warchief_grak'];
-      return !!grak && grak.status === 'dead';
-    },
+    condition: (s) => Object.values(s.characters ?? {}).filter(c => c.status === 'dead' && c.renown >= 50).length >= 1,
     fragments: [
-      'Without Grak, the horde fractures. Old tribal hatreds resurface.',
-      'The goblin tribes squabble over Grak\'s legacy. Unity was always his trick, not theirs.',
+      'The fall of a great leader leaves a power vacuum. Old rivalries resurface.',
+      'Without their champion, a faction fractures. Unity was always borrowed, never owned.',
     ],
   },
   {
-    condition: (s) => {
-      const thorne = s.factions['house_thorne'];
-      return !!thorne && thorne.morale >= 60;
-    },
+    condition: (s) => Object.values(s.factions).some(f => f.morale >= 70 && f.power >= 30),
     fragments: [
-      'House Thorne holds the line. Their banners fly defiantly against the odds.',
-      'The people of the eastern march sleep easier knowing Thorne still stands.',
+      'One faction holds the line. Their banners fly defiantly against the odds.',
+      'The people sleep easier knowing at least one power still stands firm.',
     ],
   },
   {
-    condition: (s) => {
-      const thorne = s.factions['house_thorne'];
-      return !!thorne && thorne.power <= 10;
-    },
+    condition: (s) => Object.values(s.factions).some(f => f.power <= 10 && f.morale <= 30),
     fragments: [
-      'House Thorne is bleeding out. Honor doesn\'t stop arrows.',
-      'How long can Thorne hold? The question hangs over every war council.',
+      'A faction bleeds out slowly. Honor doesn\'t stop arrows.',
+      'How long can the weak endure? The question hangs over every war council.',
     ],
   },
   {
-    condition: (s) => {
-      const valdris = s.factions['house_valdris'];
-      return !!valdris && valdris.gold >= 250;
-    },
+    condition: (s) => Object.values(s.factions).some(f => f.gold >= 300),
     fragments: [
-      'Valdris grows rich while others bleed. A familiar pattern.',
-      'Lord Valdris counts his gold and his opportunities. Both are accumulating.',
-    ],
-  },
-  {
-    condition: (s) => {
-      const guild = s.factions['silver_road_guild'];
-      return !!guild && guild.gold >= 400;
-    },
-    fragments: [
-      'The Guild\'s coffers overflow. In times of chaos, someone always profits.',
-      'Sera Blackwood plays every side. The caravans still move. The gold still flows.',
+      'Gold accumulates in certain coffers while others bleed. A familiar pattern.',
+      'The wealthy count their gold and their opportunities. Both are growing.',
     ],
   },
   {
@@ -135,57 +104,76 @@ const STATE_FRAGMENTS: Array<{
     ],
   },
   {
-    condition: (s) => {
-      const dead = Object.values(s.characters ?? {}).filter(c => c.status === 'dead');
-      return dead.length >= 3;
-    },
+    condition: (s) => Object.values(s.characters ?? {}).filter(c => c.status === 'dead').length >= 3,
     fragments: [
       'The fallen are many now. Their names echo in hall and tavern alike.',
       'Too many empty chairs at war councils. This conflict has claimed its share of leaders.',
     ],
   },
   {
-    condition: (s) => {
-      return Object.values(s.characters ?? {}).some(
-        c => c.status !== 'dead' && c.vendettas && c.vendettas.length > 0
-      );
-    },
+    condition: (s) => Object.values(s.characters ?? {}).some(c => c.status !== 'dead' && c.vendettas && c.vendettas.length > 0),
     fragments: [
       'Blood debts remain unpaid. The living sharpen their blades and wait.',
       'Vendettas crisscross the realm like cracks in glass. One more blow and something shatters.',
     ],
   },
   {
-    condition: (s) => {
-      return Object.values(s.characters ?? {}).some(
-        c => c.status !== 'dead' && c.trophies && c.trophies.length >= 2
-      );
-    },
+    condition: (s) => Object.values(s.characters ?? {}).some(c => c.status !== 'dead' && c.trophies && c.trophies.length >= 2),
     fragments: [
       'Some warriors carry the relics of the fallen. Each trophy tells a story of victory and loss.',
       'Grim trophies change hands. The strong inherit the legacy of the dead.',
     ],
   },
   {
-    condition: (s) => {
-      return Object.values(s.characters ?? {}).some(
-        c => c.activeSince >= s.turn - 4 && c.traits.includes('untested')
-      );
-    },
+    condition: (s) => Object.values(s.characters ?? {}).some(c => c.activeSince >= s.turn - 4 && c.traits.includes('untested')),
     fragments: [
       'New leaders rise from the ashes of the old. Whether they will prove worthy remains to be seen.',
       'Succession brings uncertainty. The old guard is gone — what comes next is anyone\'s guess.',
     ],
   },
   {
-    condition: (s) => {
-      return Object.values(s.characters ?? {}).some(
-        c => c.relationships && c.relationships.some(r => r.type === 'blood_oath')
-      );
-    },
+    condition: (s) => Object.values(s.characters ?? {}).some(c => c.relationships && c.relationships.some(r => r.type === 'blood_oath')),
     fragments: [
       'Blood oaths bind warriors across faction lines. Personal honor runs deeper than politics.',
       'Some bonds transcend allegiance. In a world of betrayal, a sworn oath still means something.',
+    ],
+  },
+  {
+    condition: (s) => Object.values(s.factions).some(f => f.type === 'rebels'),
+    fragments: [
+      'Rebels stir in the hinterlands. What begins as desperation may become something more.',
+      'The old order cracks. From the rubble, new banners rise.',
+    ],
+  },
+  {
+    condition: (s) => Object.values(s.factions).some(f => f.type === 'breakaway'),
+    fragments: [
+      'A faction born of betrayal tests its wings. Loyalty is a coin that can only be spent once.',
+      'The defector\'s gamble: everything to gain, and only the old world to lose.',
+    ],
+  },
+  {
+    condition: (s) => Object.values(s.factions).some(f => f.type === 'city-state'),
+    fragments: [
+      'Free cities dot the map now — merchants who learned that gold means nothing without walls.',
+      'The rise of city-states changes the game. Money buys mercenaries. Mercenaries hold walls. Walls make freedom.',
+    ],
+  },
+  {
+    condition: (s) => Object.values(s.factions).some(f => f.type === 'player-founded'),
+    fragments: [
+      'A new power, born of bold action, carves its place in a hostile world.',
+      'The newcomers have staked their claim. Now comes the hard part: keeping it.',
+    ],
+  },
+  {
+    condition: (s) => {
+      const factionCount = Object.keys(s.factions).length;
+      return factionCount >= 8;
+    },
+    fragments: [
+      'The realm fragments. More factions than ever vie for shrinking resources.',
+      'Too many crowns, too few heads. The world cannot sustain this many ambitions.',
     ],
   },
 ];
@@ -300,7 +288,12 @@ export function generateNarrativeRecap(
   const parts: string[] = [];
 
   // 1. Season opener
-  const openers = SEASON_OPENERS[state.season];
+  const defaultOpeners = [
+    'A new season dawns on {loc}. The world turns, heedless of its inhabitants.',
+    'Time moves on. The powerful scheme, the weak endure, and {loc} watches.',
+    'Another season. Another chapter in an unfinished story.',
+  ];
+  const openers = SEASON_OPENERS[state.season] ?? defaultOpeners;
   let opener = rng.pick(openers);
 
   // Fill in template tokens

@@ -158,33 +158,11 @@ export interface DiplomacyConfig {
   treatyMinRelationship: number;
 }
 
-/** Per-location-type income multipliers */
-export interface LocationBonusConfig {
-  capital: number;
-  fortress: number;
-  castle: number;
-  town: number;
-  village: number;
-  ruins: number;
-  lair: number;
-  temple: number;
-  mine: number;
-  tower: number;
-  dungeon: number;
-  catacombs: number;
-  port: number;
-  shrine: number;
-  outpost: number;
-}
+/** Per-location-type income multipliers (string-keyed for custom location types) */
+export type LocationBonusConfig = Record<string, number>;
 
-/** Action effectiveness multipliers per faction type */
-export interface ActionMultiplierConfig {
-  empire: { taxIncome: number; patrolDefense: number; recruitEfficiency: number };
-  noble: { schemeEffect: number; allianceChance: number; fortifyBonus: number };
-  bandit: { raidLoot: number; recruitCost: number; expansionBonus: number };
-  goblin: { raidLoot: number; expansionBonus: number; recruitEfficiency: number };
-  merchant: { tradeIncome: number; bribeCost: number; investEfficiency: number };
-}
+/** Action effectiveness multipliers per faction type (kept for backward compat, string-keyed) */
+export type ActionMultiplierConfig = Record<string, Record<string, number>>;
 
 export interface RecruitmentConfig {
   /** Recruit range per turn [min, max] (default [2, 5]) */
@@ -213,40 +191,35 @@ export interface RecruitmentConfig {
   tradeRandomRange: [number, number];
 }
 
+/** Generic AI thresholds — used as fallback values for tag-based AI decisions */
 export interface FactionAIConfig {
-  empire: {
-    reformCorruptionThreshold: number;  // default 80
-    reformChance: number;               // default 0.3
-    taxGoldThreshold: number;           // default 100
+  /** Generic thresholds used by tag-based AI */
+  generic: {
+    reformCorruptionThreshold: number;
+    reformChance: number;
+    taxGoldThreshold: number;
+    desperateGoldThreshold: number;
+    winterGoldThreshold: number;
+    cautionChance: number;
+    expansionChance: number;
+    expansionPowerThreshold: number;
+    raidChance: number;
+    recruitPowerThreshold: number;
+    schemeChance: number;
+    schemePowerThreshold: number;
+    allianceChance: number;
+    hireGoldThreshold: number;
+    investGoldThreshold: number;
+    investChance: number;
+    bribeGoldThreshold: number;
+    bribeChance: number;
   };
-  noble: {
-    principledRecruitThreshold: number; // default 0.6 (fraction of maxPower)
-    ambitiousRecruitThreshold: number;  // default 0.8
-    schemeChance: number;               // default 0.4
-    schemePowerThreshold: number;       // default 0.7
-    allianceChance: number;             // default 0.3
-  };
-  bandit: {
-    desperateGoldThreshold: number;     // default 20
-    winterGoldThreshold: number;        // default 40
-    cautionChance: number;              // default 0.6
-    expansionChance: number;            // default 0.3
-    expansionPowerThreshold: number;    // default 20
-    raidChance: number;                 // default 0.5
-  };
-  goblin: {
-    expansionPowerThreshold: number;    // default 25
-    expansionChance: number;            // default 0.4
-    raidChance: number;                 // default 0.5
-    recruitPowerThreshold: number;      // default 0.7
-  };
-  merchant: {
-    hireGoldThreshold: number;          // default 50
-    investGoldThreshold: number;        // default 100
-    investChance: number;               // default 0.4
-    bribeGoldThreshold: number;         // default 150
-    bribeChance: number;                // default 0.3
-  };
+  /** Legacy per-type configs (kept for backward compat) */
+  empire: Record<string, number>;
+  noble: Record<string, number>;
+  bandit: Record<string, number>;
+  goblin: Record<string, number>;
+  merchant: Record<string, number>;
 }
 
 export interface EventsConfig {
@@ -378,6 +351,26 @@ export const DEFAULT_CONFIG: SimulationConfig = {
   },
 
   factionAI: {
+    generic: {
+      reformCorruptionThreshold: 80,
+      reformChance: 0.3,
+      taxGoldThreshold: 100,
+      desperateGoldThreshold: 20,
+      winterGoldThreshold: 40,
+      cautionChance: 0.6,
+      expansionChance: 0.3,
+      expansionPowerThreshold: 20,
+      raidChance: 0.5,
+      recruitPowerThreshold: 0.7,
+      schemeChance: 0.4,
+      schemePowerThreshold: 0.7,
+      allianceChance: 0.3,
+      hireGoldThreshold: 50,
+      investGoldThreshold: 100,
+      investChance: 0.4,
+      bribeGoldThreshold: 150,
+      bribeChance: 0.3,
+    },
     empire: {
       reformCorruptionThreshold: 80,
       reformChance: 0.3,

@@ -7,7 +7,7 @@ import storyHooks from '../data/story-hooks.json';
 /** Process random world events for the turn */
 export function processRandomEvents(state: WorldState, rng: SeededRNG, config: SimulationConfig): WorldEvent[] {
   const events: WorldEvent[] = [];
-  const templates = eventsPool as EventTemplate[];
+  const templates = (state.definition?.events ?? eventsPool) as EventTemplate[];
 
   // Roll for 0-N random events per turn
   const eventCount = rng.int(0, config.events.maxEventsPerTurn);
@@ -33,8 +33,9 @@ export function processRandomEvents(state: WorldState, rng: SeededRNG, config: S
 /** Check for story beat triggers */
 export function processStoryHooks(state: WorldState): WorldEvent[] {
   const events: WorldEvent[] = [];
+  const hooks = state.definition?.storyHooks ?? storyHooks;
 
-  for (const hook of storyHooks) {
+  for (const hook of hooks) {
     if (
       state.turn === hook.triggerTurn &&
       !state.storyBeatsTriggered.includes(hook.id)
@@ -64,8 +65,16 @@ function meetsConditions(template: EventTemplate, state: WorldState): boolean {
   if (cond.minTurn && state.turn < cond.minTurn) return false;
   if (cond.season && state.season !== (cond.season as Season)) return false;
   if (cond.requiresFaction) {
-    const hasFaction = Object.values(state.factions).some(f => f.type === cond.requiresFaction);
+    const hasFaction = Object.values(state.factions).some(f =>
+      f.type === cond.requiresFaction || (f.tags ?? []).includes(cond.requiresFaction!)
+    );
     if (!hasFaction) return false;
+  }
+  if (cond.requiresTag) {
+    const hasTag = Object.values(state.factions).some(f =>
+      (f.tags ?? []).includes(cond.requiresTag!)
+    );
+    if (!hasTag) return false;
   }
 
   return true;
@@ -79,9 +88,10 @@ function createEventFromTemplate(
   let factionId: string | undefined;
   let locationId: string | undefined;
 
-  if (template.effects.targetType === 'faction' && template.conditions?.requiresFaction) {
+  if (template.effects.targetType === 'faction' && (template.conditions?.requiresFaction || template.conditions?.requiresTag)) {
     const matching = Object.values(state.factions).filter(
-      f => f.type === template.conditions!.requiresFaction
+      f => (template.conditions!.requiresFaction && (f.type === template.conditions!.requiresFaction || (f.tags ?? []).includes(template.conditions!.requiresFaction!)))
+        || (template.conditions!.requiresTag && (f.tags ?? []).includes(template.conditions!.requiresTag!))
     );
     if (matching.length > 0) {
       factionId = rng.pick(matching).id;

@@ -1,4 +1,4 @@
-import type { WorldState, WorldEvent, TurnResult, Faction, FactionAction, Treaty } from './types.js';
+import type { WorldState, WorldEvent, TurnResult, Faction, FactionAction, Treaty, PendingTurn, PendingAction } from './types.js';
 import { advanceSeason, clamp } from './world-state.js';
 import { SeededRNG } from './rng.js';
 import { processEconomy } from './economy.js';
@@ -6,6 +6,8 @@ import { decideFactionAction, getLocationController } from './factions.js';
 import { resolveRaid, resolveCombat } from './combat.js';
 import { processRandomEvents, processStoryHooks } from './events.js';
 import { decideTreatyProposal, evaluateTreatyProposal, executeTreaty } from './treaties.js';
+import { resolveTagBehavior, factionTypeToTags } from './tags.js';
+import { processFactionDeaths, processFactionBirths } from './faction-lifecycle.js';
 import {
   processCharacterPhase,
   getCharacterAtLocation,
@@ -141,10 +143,14 @@ export function resolveTurn(state: WorldState, config: SimulationConfig = DEFAUL
     }
   }
 
-  // 6. Random Events Phase
+  // 6. Faction Lifecycle Phase — deaths, births, splintering
+  events.push(...processFactionDeaths(state, rng));
+  events.push(...processFactionBirths(state, rng));
+
+  // 7. Random Events Phase
   events.push(...processRandomEvents(state, rng, config));
 
-  // 7. Story Hook Phase
+  // 8. Story Hook Phase
   events.push(...processStoryHooks(state));
 
   // Record all events
@@ -186,12 +192,198 @@ export function simulateTurns(state: WorldState, count: number, config: Simulati
   return results;
 }
 
+// ============================================================
+// Player Intervention System — Split Turn Resolution
+// ============================================================
+
+/**
+ * Phase 1: Prepare a turn up to the intervention point.
+ * Advances the season, runs decay & economy, then generates faction decisions
+ * WITHOUT executing them. Returns a PendingTurn that the player can review/modify.
+ *
+ * IMPORTANT: This MUTATES state (season advance, decay, economy) but does NOT
+ * execute faction actions, treaties, random events, or character phases.
+ */
+export function prepareTurn(state: WorldState, config: SimulationConfig = DEFAULT_CONFIG): PendingTurn {
+  const rng = new SeededRNG(state.rngSeed + state.turn * 7919);
+
+  advanceSeason(state);
+
+  const prePhaseEvents: WorldEvent[] = [];
+
+  // 1. Empire Decay Phase (runs immediately — these are background processes)
+  prePhaseEvents.push(...processEmpireDecay(state, rng, config));
+
+  // 2. Economy Phase (runs immediately — income/upkeep are automatic)
+  prePhaseEvents.push(...processEconomy(state, rng, config));
+
+  // 3. Faction Decision Phase — generate decisions but DON'T execute
+  const actions: PendingAction[] = [];
+  for (const faction of Object.values(state.factions)) {
+    const action = decideFactionAction(faction, state, rng, config);
+    actions.push({
+      factionId: faction.id,
+      factionName: faction.name,
+      factionColor: faction.color,
+      action,
+      description: describeFactionAction(faction, action),
+      enabled: true,
+    });
+  }
+
+  // Save RNG state so execution is deterministic from this point
+  return {
+    turn: state.turn,
+    season: state.season,
+    year: state.year,
+    actions,
+    prePhaseEvents,
+    rngSeed: rng.getSeed(),
+    injectedEvents: [],
+  };
+}
+
+/**
+ * Phase 2: Execute a prepared turn after player intervention.
+ * Takes the (possibly modified) PendingTurn and finishes resolution:
+ * faction action execution, treaties, consequences, characters, random events.
+ */
+export function executePreparedTurn(state: WorldState, pending: PendingTurn, config: SimulationConfig = DEFAULT_CONFIG): TurnResult {
+  const rng = new SeededRNG(pending.rngSeed);
+
+  const events: WorldEvent[] = [...pending.prePhaseEvents];
+  const factionChanges: Record<string, Partial<Faction>> = {};
+  const locationChanges: Record<string, Partial<any>> = {};
+
+  // Add any player-injected events first
+  if (pending.injectedEvents.length > 0) {
+    events.push(...pending.injectedEvents);
+  }
+
+  // Execute enabled faction actions
+  for (const pending_action of pending.actions) {
+    if (!pending_action.enabled) continue;
+    const faction = state.factions[pending_action.factionId];
+    if (!faction) continue;
+
+    const actionEvents = executeFactionAction(faction, pending_action.action, state, rng, config);
+    events.push(...actionEvents);
+
+    const actionDesc = pending_action.description;
+    faction.recentActions = [actionDesc, ...faction.recentActions.slice(0, 4)];
+
+    // Add player note as a GM chronicle entry
+    if (pending_action.playerNote) {
+      events.push({
+        id: `gm_note_${pending_action.factionId}_t${state.turn}`,
+        turn: state.turn, season: state.season, year: state.year,
+        type: 'story_hook',
+        text: `[GM] ${pending_action.playerNote}`,
+        icon: '🎲', factionId: pending_action.factionId,
+        consequences: [], hookPotential: 3,
+      });
+    }
+  }
+
+  // 4b. Treaty Proposal Phase
+  for (const faction of Object.values(state.factions)) {
+    const proposal = decideTreatyProposal(faction, state, rng, config);
+    if (proposal) {
+      const target = state.factions[proposal.targetId];
+      if (target) {
+        const accepted = evaluateTreatyProposal(faction, target, proposal.type, proposal.terms, state, rng, config);
+        if (accepted) {
+          const treaty: Treaty = {
+            id: `treaty_${faction.id}_${target.id}_t${state.turn}`,
+            type: proposal.type,
+            parties: [faction.id, target.id],
+            terms: proposal.terms,
+            createdTurn: state.turn,
+          };
+          events.push(...executeTreaty(faction, target, treaty, state));
+        } else {
+          events.push({
+            id: `treaty_reject_${faction.id}_${target.id}_t${state.turn}`,
+            turn: state.turn, season: state.season, year: state.year,
+            type: 'treaty',
+            text: `${faction.name} proposes a ${proposal.type.replace(/_/g, ' ')} to ${target.name}, but is refused.`,
+            icon: '📜', factionId: faction.id,
+            consequences: [], hookPotential: 2,
+          });
+        }
+      }
+    }
+  }
+
+  // 5. Consequence Phase
+  processConsequences(state, events, rng, config);
+
+  // 5b. Character Phase
+  if (state.characters) {
+    events.push(...processCharacterPhase(state, rng));
+    for (const char of Object.values(state.characters)) {
+      const perilEvents = rollNonCombatPerils(char, state, rng);
+      events.push(...perilEvents);
+      if (char.status === 'dead' && char.deathTurn === state.turn) {
+        events.push(...processRelationshipDeathEffects(char, state, rng));
+        if (state.factions[char.factionId]?.leader === char.name) {
+          const { successor, events: succEvents } = generateSuccessor(char, state, rng);
+          state.characters[successor.id] = successor;
+          events.push(...succEvents);
+        }
+      }
+    }
+    events.push(...processWarCouncils(state, rng));
+    events.push(...processRelationships(state, rng));
+    for (const char of Object.values(state.characters)) {
+      events.push(...rollCharacterProgression(char, state, rng));
+    }
+    for (const faction of Object.values(state.factions)) {
+      const moraleBonus = getFactionMoraleBonus(faction.id, state);
+      if (moraleBonus > 0) {
+        faction.morale = clamp(faction.morale + Math.floor(moraleBonus * 0.1), 0, 100);
+      }
+    }
+  }
+
+  // 6. Faction Lifecycle Phase — deaths, births, splintering
+  events.push(...processFactionDeaths(state, rng));
+  events.push(...processFactionBirths(state, rng));
+
+  // 7. Random Events Phase
+  events.push(...processRandomEvents(state, rng, config));
+
+  // 8. Story Hook Phase
+  events.push(...processStoryHooks(state));
+
+  // Record all events
+  state.eventLog.push(...events);
+  state.rngSeed = rng.getSeed();
+
+  const storyHooks = events.filter(e => e.hookPotential >= 4).map(e => e.text);
+  const dmBrief = generateDMBrief(state, events);
+  const narrative = generateNarrativeRecap(state, events, rng);
+
+  return {
+    turn: state.turn,
+    season: state.season,
+    year: state.year,
+    events,
+    factionChanges,
+    locationChanges,
+    storyHooks,
+    dmBrief,
+    narrative,
+  };
+}
+
 function processEmpireDecay(state: WorldState, rng: SeededRNG, config: SimulationConfig): WorldEvent[] {
   const events: WorldEvent[] = [];
   const dc = config.decay;
 
   for (const faction of Object.values(state.factions)) {
-    if (faction.type !== 'empire') continue;
+    // Apply decay to any faction with corruption > 30 (not just empires)
+    if (faction.corruption < 30) continue;
 
     // Corruption ticks up slowly
     if (rng.chance(dc.corruptionTickChance)) {
@@ -231,6 +423,13 @@ function processEmpireDecay(state: WorldState, rng: SeededRNG, config: Simulatio
   return events;
 }
 
+/** Get tag-based modifier for a stat, falling back to 0 */
+function getTagModifier(faction: Faction, state: WorldState, stat: string): number {
+  const tags = faction.tags?.length > 0 ? faction.tags : factionTypeToTags(faction.type);
+  const { modifiers } = resolveTagBehavior(tags, state.definition?.customTags);
+  return modifiers[stat] ?? 0;
+}
+
 function executeFactionAction(
   faction: Faction,
   action: FactionAction,
@@ -258,10 +457,8 @@ function executeFactionAction(
       const raidCharConsequences: string[] = [];
 
       if (result.success) {
-        // Apply raid loot multiplier for bandits/goblins
-        const am = config.actionMultipliers;
-        const lootMult = faction.type === 'bandit' ? am.bandit.raidLoot
-                       : faction.type === 'goblin' ? am.goblin.raidLoot : 1;
+        // Apply raid loot multiplier from tags
+        const lootMult = 1 + getTagModifier(faction, state, 'raidLoot');
         const boostedLoot = Math.floor(result.lootGold * lootMult);
         faction.gold += boostedLoot;
         target.prosperity = clamp(target.prosperity - result.prosperityDamage, 0, 100);
@@ -380,7 +577,8 @@ function executeFactionAction(
 
     case 'recruit': {
       const recruited = rng.int(rec.recruitRange[0], rec.recruitRange[1]);
-      const recruitCostMult = faction.type === 'bandit' ? config.actionMultipliers.bandit.recruitCost : 1;
+      const recruitMod = getTagModifier(faction, state, 'recruitEfficiency');
+      const recruitCostMult = 1 - recruitMod * 0.5; // higher efficiency = lower cost
       faction.power = clamp(faction.power + recruited, 0, faction.maxPower);
       faction.gold = Math.max(0, faction.gold - Math.floor(recruited * rec.recruitCost * recruitCostMult));
       events.push({
@@ -401,7 +599,7 @@ function executeFactionAction(
     case 'fortify': {
       const loc = state.locations[action.locationId];
       if (!loc) break;
-      const fortifyMult = faction.type === 'noble' ? config.actionMultipliers.noble.fortifyBonus : 1;
+      const fortifyMult = 1 + getTagModifier(faction, state, 'defenseBonus');
       const amount = Math.floor(rng.int(rec.fortifyRange[0], rec.fortifyRange[1]) * fortifyMult);
       loc.defense = clamp(loc.defense + amount, 0, 100);
       faction.gold = Math.max(0, faction.gold - rec.fortifyCost);
@@ -424,7 +622,7 @@ function executeFactionAction(
     case 'patrol': {
       const loc = state.locations[action.locationId];
       if (!loc) break;
-      const patrolMult = faction.type === 'empire' ? config.actionMultipliers.empire.patrolDefense : 1;
+      const patrolMult = 1 + getTagModifier(faction, state, 'defenseBonus');
       const patrolBoost = Math.floor(rec.patrolDefenseBoost * patrolMult);
       loc.defense = clamp(loc.defense + patrolBoost, 0, 100);
       events.push({
@@ -455,7 +653,7 @@ function executeFactionAction(
         loc.prosperity = clamp(loc.prosperity - ec.taxProsperityDamage, 0, 100);
       }
       // Corruption eats some taxes
-      const taxMult = faction.type === 'empire' ? config.actionMultipliers.empire.taxIncome : 1;
+      const taxMult = 1 + getTagModifier(faction, state, 'incomeRate');
       const effective = Math.floor(taxes * (1 - faction.corruption / ec.corruptionTaxDivisor) * taxMult);
       faction.gold += effective;
       events.push({
@@ -474,10 +672,15 @@ function executeFactionAction(
     }
 
     case 'scheme': {
-      // Noble scheming — weakens the empire or rivals
-      const empire = state.factions['aurelian_crown'];
-      if (empire) {
-        empire.corruption = clamp(empire.corruption + rng.int(dc.schemeCorruptionRange[0], dc.schemeCorruptionRange[1]), 0, 100);
+      // Scheming — targets the most powerful rival
+      const rivals = Object.values(state.factions)
+        .filter(f => f.id !== faction.id && !faction.alliances.includes(f.id))
+        .sort((a, b) => b.power - a.power);
+      const target = rivals[0];
+      if (target) {
+        const schemeMult = 1 + getTagModifier(faction, state, 'schemeEffect');
+        const corruptionGain = Math.floor(rng.int(dc.schemeCorruptionRange[0], dc.schemeCorruptionRange[1]) * schemeMult);
+        target.corruption = clamp(target.corruption + corruptionGain, 0, 100);
         faction.gold = Math.max(0, faction.gold - dc.schemeCost);
         events.push({
           id: `scheme_${faction.id}_t${state.turn}`,
@@ -485,10 +688,10 @@ function executeFactionAction(
           season: state.season,
           year: state.year,
           type: 'scandal',
-          text: `${faction.leader} works behind the scenes, manipulating court politics and deepening the empire's dysfunction.`,
+          text: `${faction.leader} works behind the scenes, undermining ${target.name} through manipulation and intrigue.`,
           icon: '🗡️',
           factionId: faction.id,
-          consequences: ['Imperial corruption increases'],
+          consequences: [`${target.name} corruption increases`],
           hookPotential: 3,
         });
       }
@@ -540,7 +743,7 @@ function executeFactionAction(
       if (!loc) break;
       const investment = Math.min(rec.investmentCap, faction.gold);
       faction.gold -= investment;
-      const investMult = faction.type === 'merchant' ? config.actionMultipliers.merchant.investEfficiency : 1;
+      const investMult = 1 + getTagModifier(faction, state, 'tradeIncome');
       loc.prosperity = clamp(loc.prosperity + Math.floor(investment / rec.investmentEfficiency * investMult), 0, 100);
       events.push({
         id: `invest_${faction.id}_${loc.id}_t${state.turn}`,
@@ -561,7 +764,7 @@ function executeFactionAction(
     case 'bribe': {
       const target = state.factions[action.targetFactionId];
       if (!target) break;
-      const bribeMult = faction.type === 'merchant' ? config.actionMultipliers.merchant.bribeCost : 1;
+      const bribeMult = 1 - getTagModifier(faction, state, 'tradeIncome') * 0.3; // traders pay less for bribes
       const bribeAmount = Math.min(Math.floor(dc.bribeCost * bribeMult), faction.gold);
       faction.gold -= bribeAmount;
       faction.relationships[target.id] = clamp(
@@ -793,7 +996,7 @@ function executeFactionAction(
     case 'trade': {
       const loc = state.locations[action.locationId];
       if (!loc) break;
-      const tradeMult = faction.type === 'merchant' ? config.actionMultipliers.merchant.tradeIncome : 1;
+      const tradeMult = 1 + getTagModifier(faction, state, 'tradeIncome');
       const income = Math.floor((Math.floor(loc.prosperity * rec.tradeIncomeRate) + rng.int(rec.tradeRandomRange[0], rec.tradeRandomRange[1])) * tradeMult);
       faction.gold += income;
       events.push({

@@ -1,6 +1,8 @@
-# The Aurelian Decline — Living World D&D Campaign Engine
+# WorldEngine — Living World Simulation Platform
 
-A living-world simulation engine for a D&D campaign set in a declining empire. Run it "between sessions" to produce an evolving world with emergent narrative hooks, factional power struggles, named characters who live and die, and AI-painted maps.
+A generalized living-world simulation engine for tabletop RPG campaigns. Build any world — a declining empire, a frontier frontier, a city of guilds — then run it "between sessions" to produce evolving history with emergent narrative hooks, factional power struggles, named characters who live and die, player intervention points, and AI-painted maps.
+
+Ships with the **Aurelian Decline** preset: a crumbling empire beset by noble houses, warbands, and merchant guilds.
 
 ---
 
@@ -16,6 +18,24 @@ A living-world simulation engine for a D&D campaign set in a declining empire. R
   - [Chronicle](#chronicle)
   - [Location Detail](#location-detail)
   - [Turn Controls](#turn-controls)
+- [GM Panel — User Manual](#gm-panel--user-manual)
+  - [Opening the GM Panel](#opening-the-gm-panel)
+  - [Overview Tab — World Setup](#overview-tab--world-setup)
+  - [Factions Tab](#factions-tab)
+  - [Characters Tab](#characters-tab)
+  - [Locations Tab](#locations-tab)
+  - [Map Tab](#map-tab)
+  - [Events Tab](#events-tab)
+  - [Config Tab — Simulation Tuning](#config-tab--simulation-tuning)
+- [Player Intervention System](#player-intervention-system)
+  - [Enabling Intervention Mode](#enabling-intervention-mode)
+  - [The Intervention Panel](#the-intervention-panel)
+  - [Reviewing Faction Actions](#reviewing-faction-actions)
+  - [Player Actions](#player-actions)
+  - [Resolving the Turn](#resolving-the-turn)
+- [Faction Lifecycle — Death & Birth](#faction-lifecycle--death--birth)
+  - [Faction Death](#faction-death)
+  - [Faction Birth](#faction-birth)
 - [Named Characters & NPCs](#named-characters--npcs)
   - [Character Stats](#character-stats)
   - [Combat Integration](#combat-integration)
@@ -151,6 +171,297 @@ At the bottom of the screen:
 | **Reset World** | Resets to the starting state (Year 1, Turn 1) |
 
 Below the buttons, a **procedural narrative recap** summarizes the turn's events in atmospheric prose.
+
+---
+
+## GM Panel — User Manual
+
+The GM Panel is your command center for building worlds and editing them live during play. It operates in two modes:
+
+- **Setup Mode** (before starting the game) — Full-page world builder. Design factions, characters, locations, terrain, and simulation rules from scratch or load a preset.
+- **Live Mode** (during play) — Overlay editor accessible via the 🎲 button in the turn controls. Make on-the-fly adjustments without stopping the simulation.
+
+### Opening the GM Panel
+
+- **At launch**: The GM Panel opens automatically as the World Builder. Configure your world, then click **"Begin Simulation"** to start playing.
+- **During play**: Click the **🎲 GM Tools** button in the bottom turn controls bar. The panel opens as a translucent overlay. Click the X or press Escape to close it.
+
+### Overview Tab — World Setup
+
+The landing tab for world creation.
+
+| Feature | Description |
+|---------|-------------|
+| **Preset selector** | Load a pre-built world (e.g., "The Aurelian Decline") with all factions, characters, locations, and story hooks pre-configured. |
+| **Custom world** | Start from a blank slate. Give your world a name, description, and theme, then build everything in the other tabs. |
+| **World metadata** | Edit the world's name, description, and thematic flavor text at any time. |
+| **Begin Simulation** | Finalizes setup and transitions to the playing phase. Only appears in setup mode. |
+
+### Factions Tab
+
+Create, edit, and remove factions. Each faction card expands into a full editor.
+
+**Faction Properties:**
+
+| Field | Description |
+|-------|-------------|
+| **Name** | Faction display name |
+| **Type** | Label shown in the UI (e.g., "Noble House", "Warband", "Merchant Guild") |
+| **Leader** | Name of the faction's leader character |
+| **Color** | Hex color used on the map and in charts |
+| **Power / Max Power** | Military strength. Power regenerates toward max over time. |
+| **Morale** | Faction cohesion (0-100). Low morale triggers collapse risk. |
+| **Gold** | Treasury. Funds recruitment, mercenaries, bribes, and investments. |
+| **Corruption** | Internal rot (0-100). High corruption causes power decay, morale loss, and can trigger rebellion or splintering. |
+| **Personality** | Three sliders (0-1) that drive AI decision-making: **Dealmaking** (diplomacy preference), **Aggression** (combat preference), **Greed** (economic preference) |
+| **Tags** | Behavioral tags that modify AI decisions and narrative flavor. Organized into categories: disposition, economic, political, social, military, and compound. |
+| **Goals / Attitude** | Free-text fields for AI context and narrative flavor |
+| **Controlled Locations** | Multi-select for which locations this faction owns |
+| **Relationships** | Set sentiment (-100 to +100) toward every other faction |
+
+**Actions:**
+- **Add Faction** — Creates a blank faction with default stats (20 power, 50 morale, 100 gold)
+- **Remove Faction** — Deletes the faction and cleans up all references (relationships, location ownership, character assignments)
+
+### Characters Tab
+
+Manage all named NPCs in the world with full stat editing.
+
+**Layout:** Filter bar at top (by faction, by status), character list on the left, detail editor on the right.
+
+**Character Properties:**
+
+| Field | Description |
+|-------|-------------|
+| **Name / Title** | Display name and honorific |
+| **Role** | One of: commander, champion, spymaster, warchief, diplomat, advisor |
+| **Faction** | Which faction this character belongs to. Use the transfer button to defect. |
+| **Prowess** | Martial skill (1-10). Slider control. |
+| **Cunning** | Subterfuge and survival (1-10). Slider control. |
+| **Authority** | Leadership and command (1-10). Slider control. |
+| **Renown** | Fame level (0-100). Affects combat bonuses and death targeting. |
+| **Loyalty** | Faction loyalty (0-100). Low loyalty increases defection risk. |
+| **Status** | Active, wounded (with recovery timer), captured, or dead |
+| **Traits** | Comma-separated trait list (e.g., "cunning, battle-hardened, paranoid") |
+| **Description** | Free-text backstory or notes |
+
+**Actions:**
+- **Add Character** — Creates a blank character with 5/5/5 stats
+- **Kill Character** — Marks as dead with a GM-specified cause, logged to the chronicle
+- **Transfer** — Move character to a different faction (logged as defection)
+
+### Locations Tab
+
+Create and edit all locations in the world.
+
+**Location Properties:**
+
+| Field | Description |
+|-------|-------------|
+| **Name / Type** | Location name and type (capital, fortress, castle, town, village, ruins, lair, temple) |
+| **Owner** | Controlling faction (or unclaimed) |
+| **Population** | Current population count. Affects income and refugee events. |
+| **Defense** | Fortification level. Higher = harder to raid/capture. |
+| **Prosperity** | Economic health (0-100). Drives faction income. |
+| **X / Y** | Map coordinates for positioning |
+| **Connections** | Links to other locations (used for trade routes and movement) |
+| **Resources** | Named resources at this location (e.g., "iron mines", "fertile fields") |
+| **Description** | Flavor text and notes |
+
+**Actions:**
+- **Add Location** — Creates a blank village with 100 pop, 10 defense, 20 prosperity
+- **Raze** — Destroys the location: type becomes "ruins", population/defense/prosperity set to 0, removed from faction control. Logged to chronicle.
+- **Transfer Ownership** — Reassign to a different faction
+
+### Map Tab
+
+A visual grid-based map editor for painting terrain, faction territories, and location placement.
+
+**Features:**
+
+| Feature | Description |
+|---------|-------------|
+| **Image Upload** | Upload a background image (JPG/PNG) to use as a map base. Uses FileReader for client-side processing. |
+| **Grid Setup** | Configure grid dimensions (rows × columns). Auto-generates a paintable grid overlay. |
+| **Paint Modes** | Three brush modes, selected via toggle buttons: |
+| — Terrain | Paint terrain types: plains, forest, mountain, water, desert, swamp, snow, hills. Each has a preset color. |
+| — Owner | Click a grid cell to assign it to a faction. Cells are colored by faction color. |
+| — Location | Click a cell to place a location from your locations list. |
+
+Click any cell to paint with the currently selected brush. The grid renders as a CSS grid with color-coded cells and labels.
+
+### Events Tab
+
+Inject custom events into the chronicle and browse the event history. **Only available during play** (not in setup mode).
+
+**Event Injection:**
+
+| Field | Description |
+|-------|-------------|
+| **Type** | Event category (battle, alliance, betrayal, trade, disaster, etc.) |
+| **Text** | The event description as it will appear in the chronicle |
+| **Faction** | (Optional) Associated faction |
+| **Location** | (Optional) Associated location |
+| **Hook Potential** | Narrative importance (1-10). Higher values are more likely to appear in story hook follow-ups. |
+
+**Event Log Viewer:**
+- Filter by: All events, GM-injected events only, or by event type
+- Shows the most recent 50 events in reverse chronological order
+- GM-injected events are marked with a `[GM]` prefix
+
+### Config Tab — Simulation Tuning
+
+Fine-tune every simulation parameter without touching code. Changes take effect on the next turn.
+
+**Config Sections:**
+
+| Section | What It Controls |
+|---------|-----------------|
+| **Economy** | Income rates, trade bonuses, army upkeep, territory costs, tax rates, seasonal modifiers, prosperity recovery |
+| **Combat** | Power roll scaling, morale modifiers, fortification bonuses, victory margins, casualty percentages |
+| **Raid** | Raider vs. defender scaling, loot rates, civilian casualties, relationship damage |
+| **Decay** | Corruption tick rates, power erosion from corruption, treasury drain, morale decay thresholds, reform mechanics |
+| **Diplomacy** | Alliance thresholds, bribe costs/effects, scheme costs, treaty acceptance rates |
+| **Recruitment** | Recruit costs/ranges, mercenary pricing, investment caps, fortification costs, patrol bonuses |
+| **Faction AI** | Decision thresholds for all faction types — when to raid vs. recruit vs. fortify vs. diplomacy. Per-type overrides (empire, noble, bandit, goblin, merchant). |
+| **Events** | Max events per turn, refugee mechanics (count, prosperity cost) |
+
+**Layout:** Section list on the left, field editor on the right. Each field shows its current value with an inline editor. Nested objects (e.g., seasonal economy modifiers, per-faction-type AI) are handled automatically.
+
+**Reset to Defaults** — Each section has a reset button that restores the original `DEFAULT_CONFIG` values for that section only.
+
+---
+
+## Player Intervention System
+
+The intervention system lets the GM pause turn resolution mid-way, review what every faction is about to do, and inject player character influence before outcomes are determined.
+
+### Enabling Intervention Mode
+
+Click the **🎭 Players** toggle button in the turn controls bar. When active, it glows purple. With intervention mode enabled, clicking "Advance Turn" will pause before resolving actions instead of running the full turn automatically.
+
+### The Intervention Panel
+
+When you advance a turn with intervention mode on, a full-screen overlay appears with two columns:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│              ⚔ Turn 5 — Autumn, Year 2                  │
+│                  Pending Actions                         │
+├──────────────────────────┬──────────────────────────────┤
+│  Faction Actions         │  Player Actions              │
+│                          │                              │
+│  ☑ Aurelian Crown        │  Action Type: [Kill Char ▼]  │
+│    → recruit (Phase 3)   │  Target: [Ser Roland    ▼]   │
+│    [GM note field]       │  [+ Add Action]              │
+│                          │                              │
+│  ☑ House Valdris         │  ── Queued Actions ──        │
+│    → scheme (Phase 3)    │  • Kill "Scar"               │
+│    [GM note field]       │  • Boost Iron Fang +20 gold  │
+│                          │  • Found "Free Haven" at     │
+│  ☐ Iron Fang Clans       │    Thornfield                │
+│    → raid Crosswall      │                              │
+│    (DISABLED by GM)      │                              │
+│                          │                              │
+├──────────────────────────┴──────────────────────────────┤
+│  Pre-phase events: +12 gold to Crown, -3 corruption... │
+│                                                         │
+│         [ Cancel ]              [ Resolve Turn → ]      │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Reviewing Faction Actions
+
+The left column shows every faction's chosen action for this turn. Each action card displays:
+
+- **Faction name** with color indicator
+- **Chosen action** (raid, recruit, fortify, scheme, etc.) and its target
+- **Description** of what will happen if the action executes
+- **Enable/Disable checkbox** — Uncheck to prevent this faction from acting this turn
+- **GM Note field** — Add a note explaining why you modified this action (for your own records)
+
+Economy and decay events (Phases 1-2) have already resolved and are shown in the "Pre-phase events" summary at the bottom — these cannot be undone.
+
+### Player Actions
+
+The right column lets you inject player character influence. Seven action types are available:
+
+| Action | Effect |
+|--------|--------|
+| **Kill Character** | Select any living character. They are marked as dead with cause "killed by player characters". Logged to chronicle. |
+| **Wound Character** | Select any living character. They are wounded for 2 turns, reducing their combat effectiveness. |
+| **Create Vendetta** | Select a character. They gain a personal grudge against the player party, granting them +2 combat when fighting player interests. |
+| **Steal Artifact** | Select a character with trophies. One trophy is removed from them, a vendetta is created, and a chronicle event is generated. |
+| **Boost Faction** | Select a faction and a boost type: +20 Power, +50 Gold, or +15 Morale. Represents player alliances, gifts, or support. |
+| **Found Settlement** | Select an unclaimed or low-defense location. Name your new faction, choose tags, and establish a player-founded settlement. Creates a full faction with starting stats, a leader character, and territory. |
+| **Custom Event** | Write any free-form event text. Choose a type and optionally associate it with a faction/location. Injected directly into the chronicle. |
+
+Actions are queued in a list. You can remove any queued action before resolving.
+
+### Resolving the Turn
+
+- **Resolve Turn →** applies all player actions to the world state, then executes only the enabled faction actions, followed by the remaining turn phases (treaties, consequences, characters, faction lifecycle, random events, story hooks).
+- **Cancel** reverts the world to its pre-intervention state, as if you never clicked "Advance Turn".
+
+The turn resolution is deterministic — the RNG seed is preserved in the pending turn snapshot, so the same enabled actions always produce the same outcomes.
+
+---
+
+## Faction Lifecycle — Death & Birth
+
+Factions are not permanent. They can collapse, be absorbed, or new ones can emerge organically through rebellion, defection, civil war, or economic growth. The lifecycle system runs as Phase 6 of every turn, after consequences and character events.
+
+### Faction Death
+
+Two death paths are checked every turn:
+
+**Collapse** — When a faction reaches **power ≤ 0** and controls **no territory**:
+- The faction is removed from the world
+- High-renown characters (renown > 30) are absorbed by whoever controls their current location
+- Low-renown characters die in the collapse
+- All relationships and references are cleaned up
+- A major chronicle event is generated
+
+**Absorption** — When a faction has **morale ≤ 15**, controls only **1 location**, and has **power ≤ 5**:
+- The strongest neighboring faction (by relationship + power) absorbs them
+- All territory, characters, and gold transfer to the absorber
+- Characters gain reduced loyalty (halved) reflecting reluctant service
+- The absorbed faction is removed
+- A major chronicle event is generated
+
+### Faction Birth
+
+Four organic birth paths and one player-triggered path:
+
+**Rebellion** — Triggers in locations with high corruption rulers and low prosperity:
+- Probability scales with corruption: `(corruption - 60) × 0.005 × (1 - prosperity/100)`
+- A rebel faction spawns at the location with a generated leader character
+- The rebel faction starts hostile (-60) to the parent faction
+- The location transfers to rebel control
+
+**Defection** — High-renown characters with low loyalty may break away:
+- Probability: `(renown - 50) × 0.003 × (1 - loyalty/100)`
+- The character takes their current location, a share of faction power, and gold
+- Nearby disloyal characters may join the new faction
+- The original faction loses the territory and resources
+
+**Splintering** — Extremely corrupt factions (corruption > 90) with low morale (≤ 20) and 2+ locations can split in civil war:
+- Flat 15% chance when conditions are met
+- Territory is divided — characters at each location join whichever side controls that location
+- The splinter faction gets a color-shifted version of the parent's color
+- Both factions start hostile to each other
+
+**Economic Emergence** — Prosperous unclaimed locations (prosperity > 60) can self-organize:
+- Flat 8% chance per qualifying location
+- A merchant-led city-state faction forms with a generated leader
+- Starts with moderate stats and neutral relationships
+- Represents organic economic self-governance
+
+**Player-Founded Settlement** — Via the [Intervention Panel](#the-intervention-panel):
+- Player selects an unclaimed or low-defense location
+- Names the new faction and assigns behavioral tags
+- A full faction is created with starting stats, a leader, and territory
+- Represents the player party establishing a base of operations
 
 ---
 
@@ -387,69 +698,91 @@ The CLI outputs each turn's events, faction state changes, and a final world sum
 
 ```
 src/
-├── engine/                  # Core simulation engine
-│   ├── simulation.ts        # Turn resolution pipeline (7 phases)
-│   ├── factions.ts          # Faction decision-making AI
-│   ├── combat.ts            # Battle and raid resolution
-│   ├── economy.ts           # Income, trade, upkeep
-│   ├── events.ts            # Random event generation
-│   ├── characters.ts        # Named NPC system — combat, death, progression,
-│   │                        #   vendettas, last stands, trophies, succession,
-│   │                        #   war councils, relationships
-│   ├── narrative.ts         # Procedural narrative recaps with templates
-│   ├── treaties.ts          # Treaty proposals, evaluation, execution
-│   ├── terrain.ts           # Procedural terrain generation
-│   ├── townmap.ts           # Procedural town/settlement maps
-│   ├── mapImageGen.ts       # Gemini API integration (Nano Banana 2)
-│   ├── world-state.ts       # State initialization and management
-│   ├── config.ts            # Simulation tuning knobs
-│   ├── rng.ts               # Seeded random number generator (Mulberry32)
-│   └── types.ts             # TypeScript type definitions
+├── engine/                      # Core simulation engine
+│   ├── simulation.ts            # Turn resolution pipeline (9 phases)
+│   │                            #   resolveTurn() — full auto
+│   │                            #   prepareTurn() — pause for intervention
+│   │                            #   executePreparedTurn() — resume after intervention
+│   ├── faction-lifecycle.ts     # Faction death (collapse, absorption) and
+│   │                            #   birth (rebellion, defection, splintering,
+│   │                            #   economic emergence)
+│   ├── factions.ts              # Faction decision-making AI
+│   ├── combat.ts                # Battle and raid resolution
+│   ├── economy.ts               # Income, trade, upkeep
+│   ├── events.ts                # Random event generation
+│   ├── characters.ts            # Named NPC system — combat, death, progression,
+│   │                            #   vendettas, last stands, trophies, succession,
+│   │                            #   war councils, relationships
+│   ├── narrative.ts             # Procedural narrative recaps with templates
+│   ├── treaties.ts              # Treaty proposals, evaluation, execution
+│   ├── gm-actions.ts            # GM action API — clean state mutations with
+│   │                            #   chronicle logging for all GM operations
+│   ├── terrain.ts               # Procedural terrain generation
+│   ├── townmap.ts               # Procedural town/settlement maps
+│   ├── mapImageGen.ts           # Gemini API integration (Nano Banana 2)
+│   ├── world-state.ts           # State initialization and management
+│   ├── config.ts                # Simulation tuning knobs (all defaults)
+│   ├── rng.ts                   # Seeded random number generator (Mulberry32)
+│   └── types.ts                 # TypeScript type definitions
 │
-├── data/                    # Starting world data
-│   ├── factions.json        # 7 factions with leaders, goals, relationships
-│   ├── locations.json       # 20 locations with stats, resources, rumors
-│   ├── characters.json      # 11 seed characters across all factions
-│   ├── events-pool.json     # Event templates for procedural generation
-│   └── story-hooks.json     # Narrative beats on a schedule
+├── data/                        # Starting world data
+│   ├── presets/
+│   │   └── aurelian.ts          # Aurelian Decline world preset (WorldDefinition)
+│   ├── factions.json            # 7 factions with leaders, goals, relationships
+│   ├── locations.json           # 20 locations with stats, resources, rumors
+│   ├── characters.json          # 11 seed characters across all factions
+│   ├── events-pool.json         # Event templates for procedural generation
+│   └── story-hooks.json         # Narrative beats on a schedule
 │
-├── ui/                      # React + Vite web interface
-│   ├── App.tsx              # Main app shell, state management, API key
+├── ui/                          # React + Vite web interface
+│   ├── App.tsx                  # Main app — setup/playing phases, intervention
+│   │                            #   flow, GM panel toggle, state management
 │   ├── components/
-│   │   ├── WorldMap.tsx         # Interactive world map with terrain + territory overlay
-│   │   ├── TownMapView.tsx      # Tile-based settlement maps
-│   │   ├── LocationDetail.tsx   # Location info, stats, scene painting
-│   │   ├── FactionPanel.tsx     # Faction list with stat bars
-│   │   ├── CharacterPanel.tsx   # Character cards with stats, traits, abilities,
-│   │   │                        #   trophies, vendettas, relationships
-│   │   ├── RelationshipMatrix.tsx # 7x7 faction diplomacy grid
-│   │   ├── Chronicle.tsx        # Event log
-│   │   ├── Dashboard.tsx        # World analytics
-│   │   └── TurnControls.tsx     # Turn buttons + narrative display
+│   │   ├── WorldMap.tsx             # Interactive world map with terrain + territory
+│   │   ├── TownMapView.tsx          # Tile-based settlement maps
+│   │   ├── LocationDetail.tsx       # Location info, stats, scene painting
+│   │   ├── FactionPanel.tsx         # Faction list with stat bars
+│   │   ├── CharacterPanel.tsx       # Character cards with full detail
+│   │   ├── RelationshipMatrix.tsx   # NxN faction diplomacy grid
+│   │   ├── Chronicle.tsx            # Event log
+│   │   ├── Dashboard.tsx            # World analytics
+│   │   ├── TurnControls.tsx         # Turn buttons, intervention toggle, GM toggle
+│   │   ├── InterventionPanel.tsx    # Mid-turn pause UI — action review,
+│   │   │                            #   player action builder, settlement founding
+│   │   └── gm/                      # GM Panel tab components
+│   │       ├── GMPanel.tsx          # Tab container (setup vs. live mode)
+│   │       ├── OverviewTab.tsx      # World selection, presets, metadata
+│   │       ├── FactionsTab.tsx      # Faction CRUD + full property editor
+│   │       ├── CharactersTab.tsx    # Character CRUD + stat sliders
+│   │       ├── LocationsTab.tsx     # Location CRUD + connection editor
+│   │       ├── MapTab.tsx           # Grid map painter (terrain/owner/location)
+│   │       ├── EventsTab.tsx        # Event injection + log viewer
+│   │       └── ConfigTab.tsx        # Simulation parameter tuning
 │   └── styles/
-│       └── global.css       # All styles
+│       └── global.css           # All styles (game UI, GM panel, intervention)
 │
 └── cli/
-    └── simulate.ts          # CLI simulation runner
+    └── simulate.ts              # CLI simulation runner
 ```
 
 ---
 
 ## How the Simulation Works
 
-Each turn represents one **season** (4 turns = 1 year). The pipeline resolves in order:
+Each turn represents one **season** (4 turns = 1 year). The pipeline resolves in 9 phases:
 
 | Phase | What Happens |
 |-------|-------------|
-| **1. Empire Decay** | The Aurelian Crown loses power and accumulates corruption each turn. The rate accelerates as corruption grows. |
+| **1. Empire Decay** | Factions with the "declining" tag lose power and accumulate corruption each turn. The rate accelerates as corruption grows. |
 | **2. Economy** | Factions earn income from controlled locations (based on prosperity and resources), pay upkeep for military forces, and conduct trade along connected routes. |
 | **3. Faction AI** | Each faction evaluates its goals, resources, threats, and opportunities, then chooses an action: expand, fortify, raid, form alliance, betray, or build. |
+| ↳ **Intervention** | *If intervention mode is on, the turn pauses here. The GM reviews pending actions and injects player influence before resolution continues.* |
 | **4. Conflict** | Raids and battles are resolved. Named characters present at the location modify combat rolls. Deaths trigger vendettas, trophies, last stands, and succession. |
-| **4b. Treaties** | Factions with high dealmaking personality propose treaties (tribute, trade, mutual defense, etc.). |
-| **5. Consequences** | Territory changes hands. Refugees flee. Relationships shift. Prosperity and population adjust. |
-| **5b. Characters** | Wound recovery. Non-combat perils (assassination, illness). War council events. Relationship formation. Character progression (traits, abilities, stats, titles). |
-| **6. Random Events** | Drawn from the event pool — plagues, weather, discoveries, omens, merchant caravans, bandit attacks. |
-| **7. Story Hooks** | Scheduled narrative beats fire at specific turns — a dragon sighting, a rebellion, a prophecy fulfilled. |
+| **5. Treaties** | Factions with high dealmaking personality propose treaties (tribute, trade, mutual defense, etc.). |
+| **6. Consequences** | Territory changes hands. Refugees flee. Relationships shift. Prosperity and population adjust. |
+| **7. Characters** | Wound recovery. Non-combat perils (assassination, illness). War council events. Relationship formation. Character progression (traits, abilities, stats, titles). |
+| **8. Faction Lifecycle** | Factions are checked for collapse and absorption. New factions may emerge from rebellion, defection, splintering, or economic growth. See [Faction Lifecycle](#faction-lifecycle--death--birth). |
+| **9. Random Events & Story Hooks** | Random events drawn from the event pool (plagues, weather, discoveries, omens). Scheduled story beats fire at specific turns. |
 
 All randomness uses a **seeded RNG** (Mulberry32), so the same seed always produces the same world history.
 
@@ -495,4 +828,9 @@ All randomness uses a **seeded RNG** (Mulberry32), so the same seed always produ
 |----------|-------|---------|
 | `VITE_GEMINI_API_KEY` | `.env` file or UI modal | Gemini API key for artistic map generation |
 
-No other configuration is required. The simulation is fully self-contained. Tuning knobs for combat, economy, raids, diplomacy, and decay rates are in `src/engine/config.ts`.
+No other configuration is required. The simulation is fully self-contained.
+
+All simulation parameters (combat, economy, raids, diplomacy, decay, recruitment, faction AI, events) can be tuned in two ways:
+
+1. **In-game** — Use the [Config Tab](#config-tab--simulation-tuning) in the GM Panel to adjust any parameter with immediate effect.
+2. **In code** — Edit `DEFAULT_CONFIG` in `src/engine/config.ts` to change the baseline defaults.
