@@ -4,6 +4,9 @@ import { generateTownMap, type TownMap, type Tile, type TileType, type PointOfIn
 import { generateArtisticLocation, type MapGenResult } from '../../engine/mapImageGen.js';
 import BuildingInteriorView from './BuildingInteriorView.js';
 
+// Module-level cache so generated art survives component unmount/remount
+const townArtCache = new Map<string, MapGenResult>();
+
 interface Props {
   location: Location;
   worldState: WorldState;
@@ -65,15 +68,30 @@ export default function TownMapView({ location, worldState }: Props) {
   const townMap = useMemo(() => generateTownMap(location), [location.id]);
   const [hoveredPOI, setHoveredPOI] = useState<PointOfInterest | null>(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
-  const [viewMode, setViewMode] = useState<ViewMode>('procedural');
-  const [artisticImage, setArtisticImage] = useState<MapGenResult | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>(() =>
+    townArtCache.has(location.id) ? 'artistic' : 'procedural'
+  );
+  const [artisticImage, setArtisticImage] = useState<MapGenResult | null>(
+    townArtCache.get(location.id) ?? null
+  );
   const [generating, setGenerating] = useState(false);
   const [genError, setGenError] = useState<string | null>(null);
   const [selectedPOI, setSelectedPOI] = useState<PointOfInterest | null>(null);
   const [userDesc, setUserDesc] = useState('');
 
-  // Cache artistic images per location
-  const cacheRef = useRef<Map<string, MapGenResult>>(new Map());
+  // Restore cached image when switching locations
+  const prevLocId = useRef(location.id);
+  if (prevLocId.current !== location.id) {
+    prevLocId.current = location.id;
+    const cached = townArtCache.get(location.id);
+    if (cached) {
+      if (cached !== artisticImage) setArtisticImage(cached);
+      if (viewMode !== 'artistic') setViewMode('artistic');
+    } else {
+      if (artisticImage) setArtisticImage(null);
+      if (viewMode !== 'procedural') setViewMode('procedural');
+    }
+  }
 
   const cellSize = 20;
   const svgW = townMap.width * cellSize;
@@ -90,7 +108,7 @@ export default function TownMapView({ location, worldState }: Props) {
 
   const handleGenerate = useCallback(async () => {
     const cacheKey = `${location.id}_${userDesc}`;
-    const cached = cacheRef.current.get(cacheKey);
+    const cached = townArtCache.get(cacheKey);
     if (cached) {
       setArtisticImage(cached);
       setViewMode('artistic');
@@ -102,7 +120,8 @@ export default function TownMapView({ location, worldState }: Props) {
 
     try {
       const result = await generateArtisticLocation(townMap, location, worldState, userDesc || undefined);
-      cacheRef.current.set(cacheKey, result);
+      townArtCache.set(cacheKey, result);
+      if (!userDesc) townArtCache.set(location.id, result);
       setArtisticImage(result);
       setViewMode('artistic');
     } catch (err) {

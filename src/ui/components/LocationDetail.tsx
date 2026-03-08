@@ -3,6 +3,9 @@ import type { Location, WorldState } from '../../engine/types.js';
 import TownMapView from './TownMapView.js';
 import { generateLocationScene, type MapGenResult } from '../../engine/mapImageGen.js';
 
+// Module-level cache so generated art survives component unmount/remount
+const sceneCache = new Map<string, MapGenResult>();
+
 interface Props {
   location: Location | null;
   worldState: WorldState;
@@ -25,15 +28,26 @@ function LocationSceneGenerator({
   location: Location;
   worldState: WorldState;
 }) {
-  const [image, setImage] = useState<MapGenResult | null>(null);
+  const cacheKey = `${location.id}_${userDesc}`;
+  const [image, setImage] = useState<MapGenResult | null>(sceneCache.get(location.id) ?? null);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [userDesc, setUserDesc] = useState('');
-  const cacheRef = useRef<Map<string, MapGenResult>>(new Map());
+
+  // Restore cached image when switching back to a previously-painted location
+  const prevLocId = useRef(location.id);
+  if (prevLocId.current !== location.id) {
+    prevLocId.current = location.id;
+    const cached = sceneCache.get(location.id);
+    if (cached && cached !== image) {
+      setImage(cached);
+    } else if (!cached && image) {
+      setImage(null);
+    }
+  }
 
   const handleGenerate = useCallback(async () => {
-    const cacheKey = `${location.id}_${userDesc}`;
-    const cached = cacheRef.current.get(cacheKey);
+    const cached = sceneCache.get(cacheKey);
     if (cached) {
       setImage(cached);
       return;
@@ -44,14 +58,16 @@ function LocationSceneGenerator({
 
     try {
       const result = await generateLocationScene(location, worldState, userDesc || undefined);
-      cacheRef.current.set(cacheKey, result);
+      sceneCache.set(cacheKey, result);
+      // Also cache under just the location id (no userDesc) for quick restore
+      if (!userDesc) sceneCache.set(location.id, result);
       setImage(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setGenerating(false);
     }
-  }, [location, worldState, userDesc]);
+  }, [location, worldState, userDesc, cacheKey]);
 
   return (
     <div>

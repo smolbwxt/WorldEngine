@@ -1,8 +1,11 @@
-import { useState, useMemo, useCallback, useRef } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import type { Location, WorldState } from '../../engine/types.js';
 import type { PointOfInterest } from '../../engine/townmap.js';
 import { generateBuildingInterior, type BuildingInterior, type InteriorTile } from '../../engine/buildings.js';
 import { generateArtisticInterior, type MapGenResult } from '../../engine/mapImageGen.js';
+
+// Module-level cache so generated art survives component unmount/remount
+const interiorArtCache = new Map<string, MapGenResult>();
 
 interface Props {
   poi: PointOfInterest;
@@ -40,22 +43,26 @@ type ViewMode = 'procedural' | 'artistic';
 
 export default function BuildingInteriorView({ poi, location, worldState, onClose }: Props) {
   const interior = useMemo(() => generateBuildingInterior(poi, location.id), [poi.name, location.id]);
-  const [viewMode, setViewMode] = useState<ViewMode>('procedural');
-  const [artisticImage, setArtisticImage] = useState<MapGenResult | null>(null);
+  const interiorKey = `${poi.name}_${location.id}`;
+  const [viewMode, setViewMode] = useState<ViewMode>(() =>
+    interiorArtCache.has(interiorKey) ? 'artistic' : 'procedural'
+  );
+  const [artisticImage, setArtisticImage] = useState<MapGenResult | null>(
+    interiorArtCache.get(interiorKey) ?? null
+  );
   const [generating, setGenerating] = useState(false);
   const [genError, setGenError] = useState<string | null>(null);
   const [hoveredTile, setHoveredTile] = useState<InteriorTile | null>(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
   const [userDesc, setUserDesc] = useState('');
-  const cacheRef = useRef<Map<string, MapGenResult>>(new Map());
 
   const cellSize = 28;
   const svgW = interior.width * cellSize;
   const svgH = interior.height * cellSize;
 
   const handleGenerate = useCallback(async () => {
-    const cacheKey = `${poi.name}_${location.id}_${userDesc}`;
-    const cached = cacheRef.current.get(cacheKey);
+    const cacheKey = `${interiorKey}_${userDesc}`;
+    const cached = interiorArtCache.get(cacheKey);
     if (cached) {
       setArtisticImage(cached);
       setViewMode('artistic');
@@ -66,7 +73,8 @@ export default function BuildingInteriorView({ poi, location, worldState, onClos
     setGenError(null);
     try {
       const result = await generateArtisticInterior(interior, location, worldState, userDesc || undefined);
-      cacheRef.current.set(cacheKey, result);
+      interiorArtCache.set(cacheKey, result);
+      if (!userDesc) interiorArtCache.set(interiorKey, result);
       setArtisticImage(result);
       setViewMode('artistic');
     } catch (err) {
@@ -74,7 +82,7 @@ export default function BuildingInteriorView({ poi, location, worldState, onClos
     } finally {
       setGenerating(false);
     }
-  }, [interior, location, worldState, poi.name, userDesc]);
+  }, [interior, location, worldState, interiorKey, userDesc]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
