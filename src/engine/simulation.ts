@@ -1,4 +1,4 @@
-import type { WorldState, WorldEvent, TurnResult, Faction, FactionAction, Treaty } from './types.js';
+import type { WorldState, WorldEvent, TurnResult, Faction, FactionAction, Treaty, PendingTurn, PendingAction } from './types.js';
 import { advanceSeason, clamp } from './world-state.js';
 import { SeededRNG } from './rng.js';
 import { processEconomy } from './economy.js';
@@ -185,6 +185,187 @@ export function simulateTurns(state: WorldState, count: number, config: Simulati
     results.push(resolveTurn(state, config));
   }
   return results;
+}
+
+// ============================================================
+// Player Intervention System — Split Turn Resolution
+// ============================================================
+
+/**
+ * Phase 1: Prepare a turn up to the intervention point.
+ * Advances the season, runs decay & economy, then generates faction decisions
+ * WITHOUT executing them. Returns a PendingTurn that the player can review/modify.
+ *
+ * IMPORTANT: This MUTATES state (season advance, decay, economy) but does NOT
+ * execute faction actions, treaties, random events, or character phases.
+ */
+export function prepareTurn(state: WorldState, config: SimulationConfig = DEFAULT_CONFIG): PendingTurn {
+  const rng = new SeededRNG(state.rngSeed + state.turn * 7919);
+
+  advanceSeason(state);
+
+  const prePhaseEvents: WorldEvent[] = [];
+
+  // 1. Empire Decay Phase (runs immediately — these are background processes)
+  prePhaseEvents.push(...processEmpireDecay(state, rng, config));
+
+  // 2. Economy Phase (runs immediately — income/upkeep are automatic)
+  prePhaseEvents.push(...processEconomy(state, rng, config));
+
+  // 3. Faction Decision Phase — generate decisions but DON'T execute
+  const actions: PendingAction[] = [];
+  for (const faction of Object.values(state.factions)) {
+    const action = decideFactionAction(faction, state, rng, config);
+    actions.push({
+      factionId: faction.id,
+      factionName: faction.name,
+      factionColor: faction.color,
+      action,
+      description: describeFactionAction(faction, action),
+      enabled: true,
+    });
+  }
+
+  // Save RNG state so execution is deterministic from this point
+  return {
+    turn: state.turn,
+    season: state.season,
+    year: state.year,
+    actions,
+    prePhaseEvents,
+    rngSeed: rng.getSeed(),
+    injectedEvents: [],
+  };
+}
+
+/**
+ * Phase 2: Execute a prepared turn after player intervention.
+ * Takes the (possibly modified) PendingTurn and finishes resolution:
+ * faction action execution, treaties, consequences, characters, random events.
+ */
+export function executePreparedTurn(state: WorldState, pending: PendingTurn, config: SimulationConfig = DEFAULT_CONFIG): TurnResult {
+  const rng = new SeededRNG(pending.rngSeed);
+
+  const events: WorldEvent[] = [...pending.prePhaseEvents];
+  const factionChanges: Record<string, Partial<Faction>> = {};
+  const locationChanges: Record<string, Partial<any>> = {};
+
+  // Add any player-injected events first
+  if (pending.injectedEvents.length > 0) {
+    events.push(...pending.injectedEvents);
+  }
+
+  // Execute enabled faction actions
+  for (const pending_action of pending.actions) {
+    if (!pending_action.enabled) continue;
+    const faction = state.factions[pending_action.factionId];
+    if (!faction) continue;
+
+    const actionEvents = executeFactionAction(faction, pending_action.action, state, rng, config);
+    events.push(...actionEvents);
+
+    const actionDesc = pending_action.description;
+    faction.recentActions = [actionDesc, ...faction.recentActions.slice(0, 4)];
+
+    // Add player note as a GM chronicle entry
+    if (pending_action.playerNote) {
+      events.push({
+        id: `gm_note_${pending_action.factionId}_t${state.turn}`,
+        turn: state.turn, season: state.season, year: state.year,
+        type: 'story_hook',
+        text: `[GM] ${pending_action.playerNote}`,
+        icon: '🎲', factionId: pending_action.factionId,
+        consequences: [], hookPotential: 3,
+      });
+    }
+  }
+
+  // 4b. Treaty Proposal Phase
+  for (const faction of Object.values(state.factions)) {
+    const proposal = decideTreatyProposal(faction, state, rng, config);
+    if (proposal) {
+      const target = state.factions[proposal.targetId];
+      if (target) {
+        const accepted = evaluateTreatyProposal(faction, target, proposal.type, proposal.terms, state, rng, config);
+        if (accepted) {
+          const treaty: Treaty = {
+            id: `treaty_${faction.id}_${target.id}_t${state.turn}`,
+            type: proposal.type,
+            parties: [faction.id, target.id],
+            terms: proposal.terms,
+            createdTurn: state.turn,
+          };
+          events.push(...executeTreaty(faction, target, treaty, state));
+        } else {
+          events.push({
+            id: `treaty_reject_${faction.id}_${target.id}_t${state.turn}`,
+            turn: state.turn, season: state.season, year: state.year,
+            type: 'treaty',
+            text: `${faction.name} proposes a ${proposal.type.replace(/_/g, ' ')} to ${target.name}, but is refused.`,
+            icon: '📜', factionId: faction.id,
+            consequences: [], hookPotential: 2,
+          });
+        }
+      }
+    }
+  }
+
+  // 5. Consequence Phase
+  processConsequences(state, events, rng, config);
+
+  // 5b. Character Phase
+  if (state.characters) {
+    events.push(...processCharacterPhase(state, rng));
+    for (const char of Object.values(state.characters)) {
+      const perilEvents = rollNonCombatPerils(char, state, rng);
+      events.push(...perilEvents);
+      if (char.status === 'dead' && char.deathTurn === state.turn) {
+        events.push(...processRelationshipDeathEffects(char, state, rng));
+        if (state.factions[char.factionId]?.leader === char.name) {
+          const { successor, events: succEvents } = generateSuccessor(char, state, rng);
+          state.characters[successor.id] = successor;
+          events.push(...succEvents);
+        }
+      }
+    }
+    events.push(...processWarCouncils(state, rng));
+    events.push(...processRelationships(state, rng));
+    for (const char of Object.values(state.characters)) {
+      events.push(...rollCharacterProgression(char, state, rng));
+    }
+    for (const faction of Object.values(state.factions)) {
+      const moraleBonus = getFactionMoraleBonus(faction.id, state);
+      if (moraleBonus > 0) {
+        faction.morale = clamp(faction.morale + Math.floor(moraleBonus * 0.1), 0, 100);
+      }
+    }
+  }
+
+  // 6. Random Events Phase
+  events.push(...processRandomEvents(state, rng, config));
+
+  // 7. Story Hook Phase
+  events.push(...processStoryHooks(state));
+
+  // Record all events
+  state.eventLog.push(...events);
+  state.rngSeed = rng.getSeed();
+
+  const storyHooks = events.filter(e => e.hookPotential >= 4).map(e => e.text);
+  const dmBrief = generateDMBrief(state, events);
+  const narrative = generateNarrativeRecap(state, events, rng);
+
+  return {
+    turn: state.turn,
+    season: state.season,
+    year: state.year,
+    events,
+    factionChanges,
+    locationChanges,
+    storyHooks,
+    dmBrief,
+    narrative,
+  };
 }
 
 function processEmpireDecay(state: WorldState, rng: SeededRNG, config: SimulationConfig): WorldEvent[] {

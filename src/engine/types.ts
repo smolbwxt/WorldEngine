@@ -153,6 +153,30 @@ export interface TurnResult {
   narrative: string;  // procedural flavor text recap of the turn
 }
 
+// === Player Intervention System ===
+
+/** A single pending faction action that players can review/modify before execution */
+export interface PendingAction {
+  factionId: string;
+  factionName: string;
+  factionColor?: string;
+  action: FactionAction;
+  description: string;
+  enabled: boolean;       // can be toggled off to cancel action
+  playerNote?: string;    // optional GM annotation
+}
+
+/** Snapshot of a turn after decisions but before execution — the intervention point */
+export interface PendingTurn {
+  turn: number;
+  season: Season;
+  year: number;
+  actions: PendingAction[];
+  prePhaseEvents: WorldEvent[];   // decay + economy events already applied
+  rngSeed: number;                // for resuming deterministic execution
+  injectedEvents: WorldEvent[];   // player-added events to inject during resolution
+}
+
 export type FactionAction =
   | { type: 'raid'; targetLocationId: string }
   | { type: 'recruit' }

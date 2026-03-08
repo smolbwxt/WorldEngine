@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
-import type { WorldState, TurnResult, Faction, Location, WorldDefinition } from '../engine/types.js';
+import type { WorldState, TurnResult, Faction, Location, WorldDefinition, PendingTurn } from '../engine/types.js';
 import { createInitialWorldState } from '../engine/world-state.js';
-import { resolveTurn } from '../engine/simulation.js';
+import { resolveTurn, prepareTurn, executePreparedTurn } from '../engine/simulation.js';
 import WorldMap from './components/WorldMap.js';
 import FactionPanel from './components/FactionPanel.js';
 import Chronicle from './components/Chronicle.js';
@@ -13,6 +13,7 @@ import RelationshipMatrix from './components/RelationshipMatrix.js';
 import LocationView from './components/LocationView.js';
 import SaveManager, { autoSave, loadAutoSave, hasAutoSave, clearAutoSave } from './components/SaveManager.js';
 import GMPanel from './components/GMPanel.js';
+import InterventionPanel from './components/InterventionPanel.js';
 
 type AppPhase = 'setup' | 'playing';
 type MainView = 'map' | 'dashboard' | 'diplomacy' | 'location';
@@ -37,6 +38,9 @@ export default function App() {
   const [showSaveManager, setShowSaveManager] = useState(false);
   const [showGMPanel, setShowGMPanel] = useState(false);
   const [resumeBanner, setResumeBanner] = useState(() => hasAutoSave());
+  const [interventionMode, setInterventionMode] = useState(false);
+  const [pendingTurn, setPendingTurn] = useState<PendingTurn | null>(null);
+  const [preInterventionState, setPreInterventionState] = useState<WorldState | null>(null);
 
   // Auto-save after every state change
   useEffect(() => {
@@ -60,14 +64,41 @@ export default function App() {
   }, []);
 
   const advanceTurn = useCallback(() => {
-    setWorldState(prev => {
-      const state = JSON.parse(JSON.stringify(prev)) as WorldState;
-      const result = resolveTurn(state);
-      setTurnResults(prevResults => [...prevResults, result]);
-      return state;
-    });
+    if (interventionMode) {
+      // Intervention path: prepare turn, show panel for review
+      const stateCopy = JSON.parse(JSON.stringify(worldState)) as WorldState;
+      setPreInterventionState(JSON.parse(JSON.stringify(worldState)));
+      const pending = prepareTurn(stateCopy);
+      setPendingTurn(pending);
+      setWorldState(stateCopy); // state has season/decay/economy applied
+    } else {
+      // Normal path: resolve fully
+      setWorldState(prev => {
+        const state = JSON.parse(JSON.stringify(prev)) as WorldState;
+        const result = resolveTurn(state);
+        setTurnResults(prevResults => [...prevResults, result]);
+        return state;
+      });
+    }
     setResumeBanner(false);
+  }, [interventionMode, worldState]);
+
+  const handleInterventionExecute = useCallback((finalPending: PendingTurn, updatedState: WorldState) => {
+    const result = executePreparedTurn(updatedState, finalPending);
+    setWorldState(updatedState);
+    setTurnResults(prev => [...prev, result]);
+    setPendingTurn(null);
+    setPreInterventionState(null);
   }, []);
+
+  const handleInterventionCancel = useCallback(() => {
+    // Revert to pre-intervention state
+    if (preInterventionState) {
+      setWorldState(preInterventionState);
+    }
+    setPendingTurn(null);
+    setPreInterventionState(null);
+  }, [preInterventionState]);
 
   const advanceYear = useCallback(() => {
     setWorldState(prev => {
@@ -174,6 +205,8 @@ export default function App() {
         latestResult={turnResults[turnResults.length - 1] ?? null}
         onOpenSaveManager={() => setShowSaveManager(true)}
         onOpenGMPanel={() => setShowGMPanel(true)}
+        interventionMode={interventionMode}
+        onToggleIntervention={() => setInterventionMode(prev => !prev)}
       />
 
       <div className="main-area">
@@ -225,6 +258,15 @@ export default function App() {
             onClose={() => setShowGMPanel(false)}
           />
         </div>
+      )}
+
+      {pendingTurn && (
+        <InterventionPanel
+          worldState={worldState}
+          pending={pendingTurn}
+          onExecute={handleInterventionExecute}
+          onCancel={handleInterventionCancel}
+        />
       )}
     </div>
   );
