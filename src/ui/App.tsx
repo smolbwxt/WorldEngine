@@ -10,9 +10,10 @@ import TurnControls from './components/TurnControls.js';
 import LocationDetail from './components/LocationDetail.js';
 import CharacterPanel from './components/CharacterPanel.js';
 import RelationshipMatrix from './components/RelationshipMatrix.js';
+import LocationView from './components/LocationView.js';
 import SaveManager, { autoSave, loadAutoSave, hasAutoSave, clearAutoSave } from './components/SaveManager.js';
 
-type MainView = 'map' | 'dashboard' | 'diplomacy';
+type MainView = 'map' | 'dashboard' | 'diplomacy' | 'location';
 type SideView = 'factions' | 'chronicle' | 'location' | 'characters';
 
 export default function App() {
@@ -82,6 +83,7 @@ export default function App() {
 
   const handleLocationSelect = useCallback((loc: Location) => {
     setSelectedLocation(loc);
+    setMainView('location');
     setSideView('location');
   }, []);
 
@@ -145,6 +147,12 @@ export default function App() {
           >
             Diplomacy
           </button>
+          <button
+            className={mainView === 'location' ? 'active' : ''}
+            onClick={() => setMainView('location')}
+          >
+            {selectedLocation ? selectedLocation.name : 'Location'}
+          </button>
         </div>
 
         {mainView === 'map' && (
@@ -161,6 +169,12 @@ export default function App() {
           <RelationshipMatrix
             worldState={worldState}
             onFactionSelect={handleFactionSelect}
+          />
+        )}
+        {mainView === 'location' && (
+          <LocationView
+            location={selectedLocation}
+            worldState={worldState}
           />
         )}
       </div>
