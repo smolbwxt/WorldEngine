@@ -130,7 +130,6 @@ export default function BuildingInteriorView({ poi, location, worldState, onClos
 
       {/* Map display */}
       <div style={{
-        overflow: 'auto', maxHeight: 440,
         border: '1px solid var(--border-color)', borderRadius: 6,
         background: '#1a1510', position: 'relative',
       }}>
@@ -148,7 +147,11 @@ export default function BuildingInteriorView({ poi, location, worldState, onClos
             style={{ width: '100%', display: 'block', borderRadius: 6 }}
           />
         ) : (
-          <svg width={svgW} height={svgH} viewBox={`0 0 ${svgW} ${svgH}`} style={{ display: 'block' }}>
+          <svg
+            viewBox={`0 0 ${svgW} ${svgH}`}
+            style={{ display: 'block', width: '100%', height: 'auto' }}
+            preserveAspectRatio="xMidYMid meet"
+          >
             {interior.tiles.map((row, y) =>
               row.map((tile, x) => {
                 const icon = TILE_ICONS[tile.type];

@@ -184,8 +184,6 @@ export default function TownMapView({ location, worldState }: Props) {
 
       {/* Map display */}
       <div style={{
-        overflow: 'auto',
-        maxHeight: 440,
         border: '1px solid var(--border-color)',
         borderRadius: 6,
         background: '#1a1510',
@@ -213,10 +211,9 @@ export default function TownMapView({ location, worldState }: Props) {
         ) : (
           /* Procedural tile map */
           <svg
-            width={svgW}
-            height={svgH}
             viewBox={`0 0 ${svgW} ${svgH}`}
-            style={{ display: 'block' }}
+            style={{ display: 'block', width: '100%', height: 'auto' }}
+            preserveAspectRatio="xMidYMid meet"
           >
             {/* Tiles */}
             {townMap.tiles.map((row, y) =>
