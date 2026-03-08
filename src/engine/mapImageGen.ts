@@ -58,32 +58,6 @@ export function renderTerrainToPNG(terrain: TerrainMap): Promise<string> {
       ctx.stroke();
     }
 
-    // Add terrain annotations as colored labels for the AI to understand
-    ctx.font = `${scale * 1.5}px sans-serif`;
-    ctx.textAlign = 'center';
-    const labeled = new Set<string>();
-    const BIOME_LABELS: Partial<Record<TerrainType, string>> = {
-      mountains: 'MTN',
-      snow: 'SNOW',
-      forest: 'FOREST',
-      dense_forest: 'FOREST',
-      swamp: 'SWAMP',
-      moor: 'MOOR',
-      plains: 'PLAINS',
-    };
-
-    for (let gy = 2; gy < terrain.height - 2; gy += 6) {
-      for (let gx = 2; gx < terrain.width - 2; gx += 6) {
-        const cell = terrain.cells[gy][gx];
-        const label = BIOME_LABELS[cell.terrain];
-        if (label && !labeled.has(label + Math.floor(gx / 12) + ',' + Math.floor(gy / 12))) {
-          labeled.add(label + Math.floor(gx / 12) + ',' + Math.floor(gy / 12));
-          ctx.fillStyle = 'rgba(255,255,255,0.4)';
-          ctx.fillText(label, gx * scale + scale / 2, gy * scale + scale);
-        }
-      }
-    }
-
     // Export as base64 JPEG (smaller than PNG for API transfer)
     const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
     const base64 = dataUrl.split(',')[1];
