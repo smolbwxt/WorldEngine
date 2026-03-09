@@ -105,6 +105,16 @@ export function resolveTurn(state: WorldState, config: SimulationConfig = DEFAUL
 
   // 5b. Character Phase — wound recovery, movement, morale bonuses, progression
   if (state.characters) {
+    // Leader consistency — generate successors for leaders killed outside turn resolution (e.g. GM Panel)
+    for (const faction of Object.values(state.factions)) {
+      const leaderChar = Object.values(state.characters).find(c => c.name === faction.leader);
+      if (leaderChar && leaderChar.status === 'dead' && leaderChar.deathTurn !== state.turn) {
+        const { successor, events: succEvents } = generateSuccessor(leaderChar, state, rng);
+        state.characters[successor.id] = successor;
+        events.push(...succEvents);
+      }
+    }
+
     events.push(...processCharacterPhase(state, rng));
 
     // Non-combat perils — assassination, illness, accidents
@@ -320,6 +330,16 @@ export function executePreparedTurn(state: WorldState, pending: PendingTurn, con
 
   // 5b. Character Phase
   if (state.characters) {
+    // Leader consistency — generate successors for leaders killed outside turn resolution (e.g. GM Panel, intervention)
+    for (const faction of Object.values(state.factions)) {
+      const leaderChar = Object.values(state.characters).find(c => c.name === faction.leader);
+      if (leaderChar && leaderChar.status === 'dead' && leaderChar.deathTurn !== state.turn) {
+        const { successor, events: succEvents } = generateSuccessor(leaderChar, state, rng);
+        state.characters[successor.id] = successor;
+        events.push(...succEvents);
+      }
+    }
+
     events.push(...processCharacterPhase(state, rng));
     for (const char of Object.values(state.characters)) {
       const perilEvents = rollNonCombatPerils(char, state, rng);
