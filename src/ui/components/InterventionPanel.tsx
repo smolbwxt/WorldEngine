@@ -290,7 +290,7 @@ export default function InterventionPanel({ worldState, pending, onExecute, onCa
 
   const handleExecute = () => {
     // Deep copy state for mutation
-    const newState = JSON.parse(JSON.stringify(worldState)) as WorldState;
+    const newState = structuredClone(worldState);
     const finalPending = { ...pending, actions, injectedEvents: [...injectedEvents] };
 
     // Apply all player interventions to state before execution

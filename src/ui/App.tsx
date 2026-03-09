@@ -66,15 +66,15 @@ export default function App() {
   const advanceTurn = useCallback(() => {
     if (interventionMode) {
       // Intervention path: prepare turn, show panel for review
-      const stateCopy = JSON.parse(JSON.stringify(worldState)) as WorldState;
-      setPreInterventionState(JSON.parse(JSON.stringify(worldState)));
+      setPreInterventionState(structuredClone(worldState));
+      const stateCopy = structuredClone(worldState);
       const pending = prepareTurn(stateCopy);
       setPendingTurn(pending);
       setWorldState(stateCopy); // state has season/decay/economy applied
     } else {
       // Normal path: resolve fully
       setWorldState(prev => {
-        const state = JSON.parse(JSON.stringify(prev)) as WorldState;
+        const state = structuredClone(prev);
         const result = resolveTurn(state);
         setTurnResults(prevResults => [...prevResults, result]);
         return state;
@@ -102,7 +102,7 @@ export default function App() {
 
   const advanceYear = useCallback(() => {
     setWorldState(prev => {
-      const state = JSON.parse(JSON.stringify(prev)) as WorldState;
+      const state = structuredClone(prev);
       const newResults: TurnResult[] = [];
       for (let i = 0; i < 4; i++) {
         newResults.push(resolveTurn(state));

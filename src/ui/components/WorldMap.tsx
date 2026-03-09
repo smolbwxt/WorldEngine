@@ -21,15 +21,22 @@ interface Props {
   onLocationSelect: (loc: Location) => void;
 }
 
-const FACTION_COLORS: Record<string, string> = {
-  aurelian_crown: '#d4a843',
-  house_valdris: '#8e44ad',
-  house_thorne: '#27ae60',
-  iron_fang: '#c0392b',
-  red_wolves: '#e67e22',
-  greentusk_horde: '#16a085',
-  silver_road_guild: '#7f8c8d',
-};
+// Fallback palette for factions without a color defined
+const FACTION_COLOR_FALLBACKS = [
+  '#d4a843', '#8e44ad', '#27ae60', '#c0392b',
+  '#e67e22', '#16a085', '#7f8c8d', '#2980b9',
+  '#f39c12', '#1abc9c', '#e74c3c', '#9b59b6',
+];
+
+/** Build faction color map from live state, using faction.color when available */
+function buildFactionColors(state: WorldState): Record<string, string> {
+  const colors: Record<string, string> = {};
+  let fallbackIdx = 0;
+  for (const f of Object.values(state.factions)) {
+    colors[f.id] = f.color || FACTION_COLOR_FALLBACKS[fallbackIdx++ % FACTION_COLOR_FALLBACKS.length];
+  }
+  return colors;
+}
 
 const LOCATION_ICONS: Record<string, string> = {
   capital: '★',
@@ -457,6 +464,9 @@ export default function WorldMap({ worldState, selectedFaction, onLocationSelect
 
   const locations = Object.values(worldState.locations);
 
+  // Faction colors from live state (picks up custom/spawned factions)
+  const factionColors = useMemo(() => buildFactionColors(worldState), [worldState.factions]);
+
   // Generate terrain (deterministic, memoized)
   const terrain = useMemo(
     () => generateTerrain(locations, worldState.turn ?? 42),
@@ -615,8 +625,11 @@ export default function WorldMap({ worldState, selectedFaction, onLocationSelect
         {showTerritory && territory.map((row, gy) =>
           row.map((cell, gx) => {
             if (!cell) return null;
-            const color = FACTION_COLORS[cell.factionId];
+            const color = factionColors[cell.factionId];
             if (!color) return null;
+            // Gentle fade: only strong near headquarters, transparent at edges
+            const alpha = cell.strength * cell.strength * (showProcedural ? 0.18 : 0.25);
+            if (alpha < 0.02) return null; // skip nearly-invisible cells
             return (
               <rect
                 key={`ter${gx}-${gy}`}
@@ -625,7 +638,7 @@ export default function WorldMap({ worldState, selectedFaction, onLocationSelect
                 width={terrain.cellSize}
                 height={terrain.cellSize}
                 fill={color}
-                opacity={showProcedural ? cell.strength * 0.25 : cell.strength * 0.35}
+                opacity={alpha}
               />
             );
           })
@@ -653,7 +666,7 @@ export default function WorldMap({ worldState, selectedFaction, onLocationSelect
         {/* Location markers */}
         {locations.map(loc => {
           const controllerId = getControllingFaction(loc.id, worldState);
-          const color = controllerId ? FACTION_COLORS[controllerId] ?? '#888' : '#555';
+          const color = controllerId ? factionColors[controllerId] ?? '#888' : '#555';
           const isSelected = selectedFaction?.controlledLocations.includes(loc.id);
           const size = loc.type === 'capital' ? 2.5 :
             loc.type === 'fortress' || loc.type === 'castle' ? 2 :
@@ -747,7 +760,7 @@ export default function WorldMap({ worldState, selectedFaction, onLocationSelect
                 <circle
                   key={loc.id}
                   cx={loc.x} cy={loc.y} r={2}
-                  fill={controllerId ? FACTION_COLORS[controllerId] ?? '#888' : '#555'}
+                  fill={controllerId ? factionColors[controllerId] ?? '#888' : '#555'}
                 />
               );
             })}
@@ -793,7 +806,7 @@ export default function WorldMap({ worldState, selectedFaction, onLocationSelect
             <span key={f.id} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
               <span style={{
                 width: 10, height: 10,
-                background: FACTION_COLORS[f.id] ?? '#555',
+                background: factionColors[f.id] ?? '#555',
                 border: '1px solid rgba(255,255,255,0.2)',
                 borderRadius: 2,
                 display: 'inline-block',
